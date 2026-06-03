@@ -1,6 +1,13 @@
 # MClaw 内网穿透配置包
 
-将此文件夹放入你的 MClaw 备份文件中，实现内网穿透远程访问。
+**中国移动 MClaw 备份文件** 内网穿透配置，放入备份文件即可实现远程访问。同时支持**模型替换**自定义 AI。
+
+---
+
+## 核心功能
+
+- ✅ **内网穿透** - Cloudflare Tunnel 远程访问 OpenClaw
+- ✅ **模型替换** - 通过备份还原方式替换内置模型
 
 ---
 
@@ -14,167 +21,148 @@
 git clone https://github.com/muzimu217/mclaw-remote-tunnel.git
 ```
 
-### 步骤 2：放入备份文件
+### 步骤 2：下载 MClaw 备份文件（重点！）
 
-将下载的文件夹内容复制到你的 MClaw 备份根目录：
+1. 打开 **移动网盘** APP 或网页版
+2. 进入你存放 OpenClaw 备份的路径
+3. 找到刚刚备份的系统 zip 文件（文件名类似 `openclaw-xxx-时间戳.zip`）
+4. **下载到本地**
+
+⚠️ **注意事项**：
+- 记住这个 zip 文件的**完整文件名**（包括前缀和时间戳）
+- 记住这个 zip 文件存放的**路径位置**
+- 后面打包和上传时必须完全一致！
+
+### 步骤 3：解压备份并放入配置包
+
+1. 解压下载的 zip 文件
+2. 将此配置包（`remote` 文件夹）放入解压后的根目录：
 
 ```
-你的备份文件夹/
+openclaw-你的ID-时间戳/
 ├── agents/
 ├── devices/
 ├── workspace/
-├── remote/          ← 把下载的内容放这里
+├── tidb/
+├── remote/          ← 把下载的配置包放这里
+│   ├── openclaw-tunnel.json
+│   ├── cloudflared-config.yml
+│   ├── server-start-robust.sh
+│   └── ...
 └── ...
 ```
 
-### 步骤 3：配置 Cloudflare Tunnel（重点！）
+### 步骤 4：配置 Tunnel（如需内网穿透）
 
-#### 3.1 登录 Cloudflare
+#### 4.1 登录 Cloudflare
 
-1. 打开浏览器，访问：**https://dash.cloudflare.com/**
-2. 登录你的 Cloudflare 账号（没有账号先注册一个，免费）
-3. 登录后，点击左侧菜单 **「Zero Trust」**
+访问：**https://dash.cloudflare.com/** → 登录账号
 
-#### 3.2 进入 Tunnel 页面
+#### 4.2 创建 Tunnel
 
-1. 在 Zero Trust 页面，点击左侧 **「Networks」**
-2. 再点击 **「Tunnels」**
-3. 页面地址：**https://one.dash.cloudflare.com/** → Networks → Tunnels
+1. 点击 **「Zero Trust」** → **「Networks」** → **「Tunnels」**
+2. 点击 **「Create a tunnel」**
+3. 选择 **「Cloudflared」**
+4. 输入名称如 `openclaw-tunnel`，保存
 
-#### 3.3 创建 Tunnel
+#### 4.3 获取配置信息
 
-1. 点击右上角 **「Create a tunnel」** 按钮
-2. 选择 **「Cloudflared」**（不是 WARP）
-3. 输入 Tunnel 名称，比如：`openclaw-tunnel`
-4. 点击 **「Save tunnel」**
+创建后记录以下信息：
 
-#### 3.4 获取配置信息（关键！）
+| 字段 | 位置 | 格式 |
+|------|------|------|
+| Tunnel ID | 页面顶部 | UUID 格式 |
+| Account Tag | 点击「View configuration details」 | 32位字符 |
+| Tunnel Secret | 创建时显示 | 长字符串（只显示一次！） |
 
-创建完成后，页面会显示以下信息，**记下来**：
+#### 4.4 填入配置文件
 
-| 字段 | 在页面的位置 | 示例格式 |
-|------|-------------|----------|
-| **Tunnel ID** | 页面上方，类似 `e040a498-3c43-47ac-82a4-5b2f33132783` | 一串 UUID |
-| **Account Tag** | 需要点击「View configuration details」查看 | 一串32位字符 |
-| **Tunnel Secret** | 创建时显示的 Token，类似 `RMqY+JgDIo9zaN6jnDq...` | 很长的字符串 |
-
-**注意**：Tunnel Secret 只在创建时显示一次，请立即复制保存！
-
-#### 3.5 填入配置文件
-
-打开 `openclaw-tunnel.json` 文件，填入你刚才记录的信息：
-
+**openclaw-tunnel.json**：
 ```json
 {
-  "AccountTag": "你的AccountTag（32位字符）",
-  "TunnelID": "你的TunnelID（UUID格式）",
+  "AccountTag": "你的AccountTag",
+  "TunnelID": "你的TunnelID",
   "TunnelName": "openclaw-tunnel",
-  "TunnelSecret": "你的TunnelSecret（长字符串）"
+  "TunnelSecret": "你的TunnelSecret"
 }
 ```
 
-### 步骤 4：配置域名路由
-
-#### 4.1 准备域名
-
-你需要一个域名托管在 Cloudflare（Cloudflare DNS），没有的话：
-1. 在 Cloudflare 首页点击 **「Add a site」**
-2. 输入你的域名，按提示添加
-
-#### 4.2 编辑路由配置
-
-直接编辑 `cloudflared-config.yml`，把 `XXX...your-tunnel-id` 和 `your-domain.example.com` 改成你的真实配置：
-
+**cloudflared-config.yml**：
 ```yaml
 tunnel: 你的TunnelID
-credentials-file: ~/.cloudflared/openclaw-tunnel.json
-
 ingress:
   - hostname: 你的域名.com
     path: /terminal*
     service: http://localhost:7681
-
-  - hostname: 你的域名.com
-    service: http://localhost:18789
-
-  - hostname: ssh.你的域名.com
-    service: ssh://localhost:22
-
-  - service: http_status:404
+  ...
 ```
 
-#### 4.3 DNS 自动配置
+### 步骤 5：打包上传还原（重点！）
 
-不需要手动配置 DNS！Cloudflare Tunnel 会自动为你创建：
-- `你的域名.com` → 指向 Tunnel
-- `ssh.你的域名.com` → 指向 Tunnel
+⚠️ **注意事项（非常重要）**：
 
-### 步骤 5：打包上传还原
+1. **zip 包名一定要和下载的那个备份文件名一模一样！**
+   - 下载的是 `openclaw-1287296976021332797-20260603120000.zip`
+   - 打包时必须用完全相同的名字！
 
-1. 把整个备份文件夹打包成 zip（文件名和原备份一致！）
-2. 上传到移动网盘，替换原备份文件
-3. 在 OpenClaw 管理界面点击 **「还原系统」**
+2. **上传到和下载备份包一样的路径**
+   - 直接替换原本的包
+   - 路径不一致会导致还原失败！
+
+打包命令示例：
+```bash
+# 确保包名和原下载文件完全一致
+zip -r openclaw-1287296976021332797-20260603120000.zip openclaw-1287296976021332797-20260603120000/
+```
+
+上传后在 OpenClaw 管理界面点击 **「还原系统」**。
 
 ### 步骤 6：服务器启动
 
-将备份包发送到服务器后：
-
 ```bash
-# 安装依赖
 apt update && apt install -y wget curl procps
-
-# 进入 remote 目录
 cd remote
-
-# 一键启动
-chmod +x server-start-robust.sh
 ./server-start-robust.sh
 ```
 
-### 步骤 7：验证访问
+---
 
-启动后，访问以下地址测试：
+## 模型替换（可选）
 
-- **Web 终端**: `https://你的域名.com/terminal/`
-  - 用户名: `openclaw`
-  - 密码: `OpenClaw@2026`
-- **Web 界面**: `https://你的域名.com/`
+如果想替换内置模型为 DeepSeek、MiMo、GPT 等：
+
+1. 解压备份 zip
+2. 编辑 `agents/main/agent/models.json`
+3. 把 `baseUrl` 和 `apiKey` 改成你的 API 配置
+4. 按上述步骤打包上传还原
 
 ---
 
 ## 配置信息获取总结
 
-| 你需要的信息 | 获取地址 | 获取步骤 |
-|-------------|---------|---------|
+| 你需要的信息 | 获取地址 | 步骤 |
+|-------------|---------|------|
 | Cloudflare账号 | https://dash.cloudflare.com/ | 注册/登录 |
-| Tunnel配置页面 | https://one.dash.cloudflare.com/ | 左侧 Networks → Tunnels |
-| Tunnel ID | 创建 Tunnel 后页面顶部显示 | 直接复制 |
-| Account Tag | 点击「View configuration details」 | 复制32位字符串 |
-| Tunnel Secret | 创建 Tunnel 时一次性显示 | 立即复制保存 |
+| Tunnel页面 | Networks → Tunnels | 创建 Tunnel |
+| Tunnel ID | 页面顶部 | 直接复制 |
+| Account Tag | 「View configuration details」 | 复制32位字符 |
+| Tunnel Secret | 创建时一次性显示 | 立即保存 |
 
 ---
 
 ## 常见问题
 
-### Q: Tunnel Secret 找不到怎么办？
+### Q: zip 包名不一致会怎样？
 
-Tunnel Secret 只在创建时显示一次。如果忘了：
-1. 在 Tunnels 页面删除原来的 Tunnel
-2. 重新创建一个新的 Tunnel
-3. 这次一定要立即复制 Secret！
+还原会失败！系统找不到备份文件。必须保持文件名完全一致。
 
-### Q: 域名怎么配置？
+### Q: 上传路径不对会怎样？
 
-只要你把域名托管到 Cloudflare DNS，其他什么都不用做。Tunnel 会自动配置 DNS 记录。
+还原时找不到文件。必须上传到和下载时完全相同的路径。
 
-### Q: 启动脚本报错？
+### Q: Tunnel Secret 找不到？
 
-检查服务器是否有 wget 或 curl：
-
-```bash
-# 安装依赖
-apt install -y wget curl procps
-```
+只显示一次。忘了就删除重建 Tunnel，这次立即复制！
 
 ---
 
@@ -186,11 +174,10 @@ apt install -y wget curl procps
 
 ## 致谢
 
-感谢 [Linux.do](https://linux.do) 社区的支持与贡献，特别感谢以下社区成员：
-
-- **JSW** — 提供关键技术思路和指导
-- **Yumenosora** — 协助测试与反馈
-- **Mr.Hua** — 提供部署经验与优化建议
+感谢 [Linux.do](https://linux.do) 社区的支持与贡献：
+- **JSW** — 关键技术思路
+- **Yumenosora** — 测试反馈
+- **Mr.Hua** — 部署优化
 
 ---
 
