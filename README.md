@@ -11,6 +11,10 @@
 
 ---
 
+> ⚠️ **【注意事项】** 在进行以下任何操作之前，请务必先在中国移动 APP 的 **MClaw（小龙虾）** 界面中 **多做几次备份！多做几次备份！** 以防操作失误导致数据丢失或配置异常，备份是最可靠的恢复手段。
+
+---
+
 ## 使用方法
 
 ### 步骤 1：下载此配置包
@@ -33,24 +37,23 @@ git clone https://github.com/muzimu217/mclaw-remote-tunnel.git
 - 记住这个 zip 文件存放的**路径位置**
 - 后面打包和上传时必须完全一致！
 
-### 步骤 3：解压备份并放入配置包（重点！）
+### 步骤 3：解压备份并放入配置包
 
 1. 解压下载的 zip 文件
-2. 将此配置包（`remote` 文件夹）放入 `agents/main/` 目录，和 `agent` 目录同级：
+2. 将此配置包（`remote` 文件夹）放入解压后的根目录：
 
 ```
-agents/main/
-├── agent/
-│   └── models.json      ← 已存在
-├── remote/              ← 放这里！和 agent 目录同级
+openclaw-xxx-时间戳/          ← 解压后的根目录
+├── agents/
+├── devices/
+├── remote/                   ← 放这里！根目录
 │   ├── openclaw-tunnel.json
 │   ├── cloudflared-config.yml
 │   ├── server-start-robust.sh
-│   └── ...
-└── sessions/
+│   └── README.md
+├── workspace/
+└── ...
 ```
-
-⚠️ **注意**：不要放在根目录！放在根目录会导致还原时路径不匹配报错。必须放在 `agents/main/` 目录里，和 `agent` 目录同级。
 
 ### 步骤 4：配置 Tunnel（如需内网穿透）
 
