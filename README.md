@@ -139,7 +139,6 @@ cd remote
 agents/main/agent/models.json
 ```
 
-⚠️ **注意**：这是备份包里的配置文件，不是容器内的运行时路径（`/home/node/.openclaw/openclaw.json`）。备份还原时系统会读取这个文件。
 
 ### 替换方案
 
