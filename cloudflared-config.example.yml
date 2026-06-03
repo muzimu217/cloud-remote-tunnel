@@ -1,0 +1,20 @@
+tunnel: XXX...your-tunnel-id
+credentials-file: ~/.cloudflared/openclaw-tunnel.json
+
+# Web 访问
+ingress:
+  # Web 终端（ttyd）路径优先匹配
+  - hostname: your-domain.example.com
+    path: /terminal*
+    service: http://localhost:7681
+
+  # Web 访问
+  - hostname: your-domain.example.com
+    service: http://localhost:18789
+
+  # SSH 隧道访问（可选）
+  - hostname: ssh.your-domain.example.com
+    service: ssh://localhost:22
+
+  # 默认 404
+  - service: http_status:404

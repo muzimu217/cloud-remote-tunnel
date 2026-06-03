@@ -1,0 +1,6 @@
+{
+  "AccountTag": "XXX...your-account-tag",
+  "TunnelID": "XXX...your-tunnel-id",
+  "TunnelName": "openclaw-tunnel",
+  "TunnelSecret": "XXX...your-tunnel-secret"
+}
