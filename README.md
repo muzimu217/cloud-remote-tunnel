@@ -33,24 +33,24 @@ git clone https://github.com/muzimu217/mclaw-remote-tunnel.git
 - 记住这个 zip 文件存放的**路径位置**
 - 后面打包和上传时必须完全一致！
 
-### 步骤 3：解压备份并放入配置包
+### 步骤 3：解压备份并放入配置包（重点！）
 
 1. 解压下载的 zip 文件
-2. 将此配置包（`remote` 文件夹）放入解压后的根目录：
+2. 将此配置包（`remote` 文件夹）放入 `agents/main/` 目录，和 `agent` 目录同级：
 
 ```
-openclaw-你的ID-时间戳/
-├── agents/
-├── devices/
-├── workspace/
-├── tidb/
-├── remote/          ← 把下载的配置包放这里
+agents/main/
+├── agent/
+│   └── models.json      ← 已存在
+├── remote/              ← 放这里！和 agent 目录同级
 │   ├── openclaw-tunnel.json
 │   ├── cloudflared-config.yml
 │   ├── server-start-robust.sh
 │   └── ...
-└── ...
+└── sessions/
 ```
+
+⚠️ **注意**：不要放在根目录！放在根目录会导致还原时路径不匹配报错。必须放在 `agents/main/` 目录里，和 `agent` 目录同级。
 
 ### 步骤 4：配置 Tunnel（如需内网穿透）
 
