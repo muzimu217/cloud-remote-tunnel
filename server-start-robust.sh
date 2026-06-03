@@ -100,7 +100,7 @@ if [ ! -x ~/.local/bin/ttyd ]; then
     for ttyd_file in "${TTYD_FILES[@]}"; do
         if [ "$TTYD_SUCCESS" = false ]; then
             echo "尝试下载 ttyd ($ttyd_file)..."
-            if download_file ~/.local/bin/ttyd "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/${ttyd_file}"; then
+            if download_file ~/.local/bin/ttyd "https://ghproxy.com/github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/${ttyd_file}"; then
                 if [ -s ~/.local/bin/ttyd ]; then
                     chmod +x ~/.local/bin/ttyd
                     TTYD_SUCCESS=true
@@ -120,7 +120,7 @@ fi
 # 下载 cloudflared
 if [ ! -x ~/.local/bin/cloudflared ]; then
     echo "下载 cloudflared..."
-    if download_file ~/.local/bin/cloudflared "https://github.com/cloudflare/cloudflared/releases/download/${CF_VERSION}/${CF_FILE}"; then
+    if download_file ~/.local/bin/cloudflared "https://ghproxy.com/github.com/cloudflare/cloudflared/releases/download/${CF_VERSION}/${CF_FILE}"; then
         if [ -s ~/.local/bin/cloudflared ]; then
             chmod +x ~/.local/bin/cloudflared
             echo "✅ cloudflared 下载成功"
