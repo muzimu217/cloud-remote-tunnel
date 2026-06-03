@@ -119,7 +119,45 @@ zip -r openclaw-1287296976021332797-20260603120000.zip openclaw-1287296976021332
 
 上传后在 MClaw 管理界面点击 **「还原系统」**。
 
-### 步骤 6：服务器启动
+### 步骤 6：备份还原后发送给 AI 的指令（重点！）
+
+系统还原完成后，你需要给 AI 发送以下指令来启动内网穿透服务：
+
+#### 发送给 AI 的指令：
+
+```
+进入 remote 目录，执行 server-start-robust.sh 启动内网穿透
+```
+
+或者更详细的指令：
+
+```
+请帮我启动内网穿透服务：
+1. 先安装依赖：apt update && apt install -y wget curl procps
+2. 进入 remote 目录
+3. 执行 ./server-start-robust.sh
+```
+
+#### AI 会自动执行：
+
+1. 检查并安装前置依赖（wget、curl、procps）
+2. 下载 ttyd 和 cloudflared 二进制文件
+3. 配置 Cloudflare Tunnel
+4. 启动 Web 终端（端口 7681）
+5. 启动 Tunnel 连接
+
+#### 验证启动成功：
+
+AI 启动后，你可以通过以下地址访问：
+
+- **Web 终端**: `https://你的域名.com/terminal/`
+- **Web 界面**: `https://你的域名.com/`
+
+---
+
+## 如果在云服务器上操作
+
+如果你是在云服务器（如腾讯云 Cloud Studio）上操作，可以直接执行：
 
 ```bash
 apt update && apt install -y wget curl procps
