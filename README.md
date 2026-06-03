@@ -129,12 +129,89 @@ cd remote
 
 ## 模型替换（可选）
 
-如果想替换内置模型为 DeepSeek、MiMo、GPT 等：
+想替换内置模型为 DeepSeek、MiMo、GPT 等，按以下步骤操作：
 
-1. 解压备份 zip
-2. 编辑 `agents/main/agent/models.json`
-3. 把 `baseUrl` 和 `apiKey` 改成你的 API 配置
-4. 按上述步骤打包上传还原
+### 模型配置文件位置
+
+```
+agents/main/agent/models.json
+```
+
+⚠️ **注意**：这是备份包里的配置文件，不是容器内的运行时路径（`/home/node/.openclaw/openclaw.json`）。备份还原时系统会读取这个文件。
+
+### 替换方案
+
+直接修改 `providers.router` 下的三个关键字段：
+
+```json
+{
+  "providers": {
+    "router": {
+      "baseUrl": "https://api.deepseek.com/v1",    ← 改这里
+      "apiKey": "你的API-Key",                      ← 改这里
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "deepseek-chat",                   ← 改这里
+          "name": "deepseek-chat",                 ← 改这里
+          "api": "openai-completions",
+          "reasoning": false,                      ← 推理模型设为 true
+          ...
+        }
+      ]
+    }
+  }
+}
+```
+
+### 需要修改的字段
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `baseUrl` | API 地址（OpenAI 兼容格式） | `https://api.deepseek.com/v1` |
+| `apiKey` | 你的 API Key | `sk-xxx...` |
+| `models[0].id` | 模型标识 | `deepseek-chat` |
+| `models[0].name` | 模型名称 | `deepseek-chat` |
+| `reasoning` | 推理模型开关 | `true`（如 DeepSeek-R1、MiMo） |
+
+⚠️ **重要**：
+- 不要新建 provider，就地替换 `router` 这个 provider 即可
+- 其他字段（如 `api`、`input`、`contextWindow`）保持不变
+
+### 支持的模型示例
+
+| 模型 | baseUrl | reasoning |
+|------|---------|-----------|
+| DeepSeek Chat | `https://api.deepseek.com/v1` | `false` |
+| DeepSeek R1 | `https://api.deepseek.com/v1` | `true` |
+| MiMo v2.5 Pro | `https://token-plan-sgp.xiaomimimo.com/v1` | `true` |
+| GPT-4o | `https://api.openai.com/v1` | `false` |
+| 本地 Ollama | `http://localhost:11434/v1` | `false` |
+
+---
+
+## 人设替换（可选）
+
+想自定义 AI 的性格、身份，修改以下文件：
+
+| 文件 | 用途 |
+|------|------|
+| `workspace/SOUL.md` | 核心性格和行为规则 |
+| `workspace/IDENTITY.md` | 名字、形象等身份信息 |
+| `workspace/USER.md` | 用户偏好设置 |
+| `workspace/AGENTS.md` | 工作空间指南 |
+
+直接编辑这些 `.md` 文件，然后打包还原即可生效。
+
+---
+
+## 打包还原注意事项
+
+只要 zip 包名和目录结构与原始备份一致，系统还原时能正常识别加载：
+
+1. **包名一致** - 和下载时的 zip 文件名完全相同
+2. **目录结构一致** - 顶层目录名也一致（如 `openclaw-1287296976021332797-20260603120000/`）
+3. **上传路径一致** - 上传到移动网盘中和下载时相同的路径
 
 ---
 
