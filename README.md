@@ -81,15 +81,9 @@ git clone https://github.com/muzimu217/mclaw-remote-tunnel.git
 1. 在 Cloudflare 首页点击 **「Add a site」**
 2. 输入你的域名，按提示添加
 
-#### 4.2 创建路由配置
+#### 4.2 编辑路由配置
 
-复制示例文件：
-
-```bash
-cp cloudflared-config.example.yml cloudflared-config.yml
-```
-
-编辑 `cloudflared-config.yml`，把 `your-domain.example.com` 改成你的真实域名：
+直接编辑 `cloudflared-config.yml`，把 `XXX...your-tunnel-id` 和 `your-domain.example.com` 改成你的真实配置：
 
 ```yaml
 tunnel: 你的TunnelID
