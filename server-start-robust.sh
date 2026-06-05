@@ -281,7 +281,7 @@ if [ -n "$GATEWAY_TOKEN" ]; then
     echo "令牌: $GATEWAY_TOKEN"
     echo ""
     echo "Web 界面访问地址:"
-    echo "https://tunnel.muzimu217.dpdns.org/chat?session=agent%3Amain%3Amain&token=$GATEWAY_TOKEN"
+    echo "https://YOUR_DOMAIN/chat?session=agent%3Amain%3Amain&token=$GATEWAY_TOKEN"
     echo ""
     echo "⚠️  请保存此令牌，用于访问 OpenClaw Web 界面"
 else
@@ -308,17 +308,17 @@ echo ""
 echo "=== 访问地址汇总 ==="
 echo ""
 echo "📍 Web 终端 (ttyd):"
-echo "   https://tunnel.muzimu217.dpdns.org/terminal/"
+echo "   https://YOUR_DOMAIN/terminal/"
 echo "   用户名: openclaw | 密码: OpenClaw@2026"
 echo ""
 echo "📍 OpenClaw Web 界面:"
-echo "   https://tunnel.muzimu217.dpdns.org/chat?session=agent%3Amain%3Amain"
+echo "   https://YOUR_DOMAIN/chat?session=agent%3Amain%3Amain"
 if [ -n "$GATEWAY_TOKEN" ]; then
-    echo "   带令牌: https://tunnel.muzimu217.dpdns.org/chat?session=agent%3Amain%3Amain&token=$GATEWAY_TOKEN"
+    echo "   带令牌: https://YOUR_DOMAIN/chat?session=agent%3Amain%3Amain&token=$GATEWAY_TOKEN"
 fi
 echo ""
 echo "📍 SSH 隧道:"
-echo "   ssh.muzimu217.dpdns.org"
+echo "   ssh.YOUR_DOMAIN"
 
 echo ""
 echo "=== 日志文件 ==="
@@ -348,6 +348,6 @@ fi
 
 echo ""
 echo "=== 后续操作建议 ==="
-echo "1. 测试 Web 终端: 浏览器访问 https://tunnel.muzimu217.dpdns.org/terminal/"
+echo "1. 测试 Web 终端: 浏览器访问 https://YOUR_DOMAIN/terminal/"
 echo "2. 测试 Web 界面: 使用上述带令牌的链接访问"
 echo "3. 如果令牌获取失败，请在 Web 终端中执行: curl http://localhost:18789/api/token"
