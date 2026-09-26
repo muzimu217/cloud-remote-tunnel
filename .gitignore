@@ -1,0 +1,9 @@
+# 含真实密钥/口令的本地文件, 严禁提交
+openclaw-tunnel.json
+connect.json
+
+# 运行产物
+*.zip
+.DS_Store
+__pycache__/
+*.pyc

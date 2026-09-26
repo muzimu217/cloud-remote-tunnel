@@ -11,6 +11,39 @@
 - ✅ **网关令牌** - 自动获取并输出访问令牌
 - ✅ **模型替换** - 通过备份还原方式替换内置模型
 - ✅ **国内加速** - 使用 gh-proxy 镜像下载二进制文件
+- ✅ **本地一键连接** - 服务器部署后，本地一条命令直连远程终端（无需浏览器）
+
+---
+
+## 本地一键连接（推荐）
+
+服务器部署完成后，在**本地电脑**上即可像 SSH 一样直连远程终端。纯 Python 标准库实现，无任何依赖，macOS / Linux 开箱即用。
+
+### 1. 配置服务器信息
+
+```bash
+cp connect.json.example connect.json
+vi connect.json   # 填入你的域名、用户名、密码
+```
+
+### 2. 连接
+
+```bash
+./connect.sh myserver              # 交互式终端（Ctrl-] 退出，其余按键全部透传）
+./connect.sh myserver "uptime"     # 执行单条命令，输出后退出
+```
+
+> 💡 网络受限的环境（如国内直连 Cloudflare 不稳）会在直连失败后自动尝试本机 `127.0.0.1:7897` HTTP 代理兜底，也可在 `connect.json` 中用 `proxy` 字段显式指定。
+
+### 3. 首次部署到新服务器
+
+```bash
+# 上传配置包到服务器任意目录后：
+cd remote
+./server-start-robust.sh           # 自动下载依赖、启动隧道+终端+守护进程
+```
+
+> 🔒 **安全建议**：`openclaw / OpenClaw@2026` 是文档示例口令，且 ttyd 终端等同于服务器上运行脚本的用户的 shell。部署后请立即修改 `server-start-robust.sh` 和 `tunnel-daemon.sh` 中 `-c openclaw:OpenClaw@2026` 为你自己的强口令，再执行脚本。含真实密钥的 `openclaw-tunnel.json`、`connect.json` 已列入 `.gitignore`，切勿提交或分享。
 
 ---
 

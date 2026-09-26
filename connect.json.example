@@ -1,0 +1,12 @@
+{
+  "_说明": "复制本文件为 connect.json 并填入你自己的信息。proxy 留空表示直连(失败自动尝试本机 7897 端口兜底)。",
+  "default": "myserver",
+  "proxy": "",
+  "servers": {
+    "myserver": {
+      "url": "https://你的域名.example.com",
+      "user": "openclaw",
+      "password": "改成你自己的强密码"
+    }
+  }
+}

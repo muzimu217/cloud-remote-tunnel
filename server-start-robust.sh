@@ -150,11 +150,13 @@ else
     exit 1
 fi
 
-# 修正配置文件中的凭证路径
+# 修正配置文件中的凭证路径（兼容 /home/node/... 与 ~/... 两种写法）
 if sed --version 2>/dev/null | grep -q GNU; then
-    sed -i "s|/home/node/.cloudflared/openclaw-tunnel.json|$HOME/.cloudflared/tunnel-credentials.json|g" "$HOME/.cloudflared/config.yml"
+    sed -i -e "s|/home/node/.cloudflared/openclaw-tunnel.json|$HOME/.cloudflared/tunnel-credentials.json|g" \
+           -e "s|~/.cloudflared/openclaw-tunnel.json|$HOME/.cloudflared/tunnel-credentials.json|g" "$HOME/.cloudflared/config.yml"
 else
-    sed "s|/home/node/.cloudflared/openclaw-tunnel.json|$HOME/.cloudflared/tunnel-credentials.json|g" "$HOME/.cloudflared/config.yml" > "$HOME/.cloudflared/config.yml.tmp"
+    sed -e "s|/home/node/.cloudflared/openclaw-tunnel.json|$HOME/.cloudflared/tunnel-credentials.json|g" \
+        -e "s|~/.cloudflared/openclaw-tunnel.json|$HOME/.cloudflared/tunnel-credentials.json|g" "$HOME/.cloudflared/config.yml" > "$HOME/.cloudflared/config.yml.tmp"
     mv "$HOME/.cloudflared/config.yml.tmp" "$HOME/.cloudflared/config.yml"
 fi
 
