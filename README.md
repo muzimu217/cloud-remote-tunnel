@@ -1,6 +1,8 @@
-# MClaw 内网穿透配置包
+# Cloud Remote Tunnel · 云端容器远程终端配置包
 
-**中国移动 MClaw 备份文件** 内网穿透配置，放入备份文件即可实现远程访问。同时支持**模型替换**自定义 AI。
+> 前身 `mclaw-remote-tunnel`：最初为**中国移动 MClaw（小龙虾）**定制的内网穿透配置包，现已泛化为任意 **Linux 云服务器 / 云端容器**通用的远程终端方案。
+
+把隔离的云端环境通过 **Cloudflare Tunnel** 挂到你自己的域名上，本地 `./connect.sh` 一条命令直连远程终端——像 SSH 一样，给云端跑的 AI agent / coding 工具留一个摸得着的口子。同时支持 MClaw 备份还原玩法与**模型替换**自定义 AI。
 
 ---
 
@@ -66,7 +68,7 @@ cd remote
 点击右上角 **「Code」** → **「Download ZIP」** 下载，或：
 
 ```bash
-git clone https://github.com/muzimu217/mclaw-remote-tunnel.git
+git clone https://github.com/muzimu217/cloud-remote-tunnel.git
 ```
 
 ### 步骤 2：下载 MClaw 备份文件（重点！）
@@ -414,6 +416,14 @@ curl http://localhost:18789/api/token
 - **JSW** — 信息资讯分享
 - **Yumenosora** — 写给小白的MClaw的轮椅♿️教程分享
 
+
+---
+
+## 社区交流
+
+[![Linux Do](https://img.shields.io/badge/社区-Linux%20Do-f5a623)](https://linux.do)
+
+本项目的发布、讨论与反馈在 [Linux Do 社区](https://linux.do)进行，欢迎来吹水、提需求、交换邪修玩法。Issue / PR 直接走 GitHub。
 
 ---
 
