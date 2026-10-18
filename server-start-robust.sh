@@ -180,34 +180,53 @@ download_with_fallback() {
     return 1
 }
 
-if [ ! -x "$TTYD_BIN" ]; then
+# 下载 + ELF 校验。镜像在源站不可达时可能返回 HTTP 200 的 HTML 错误页,
+# curl 视为成功; 只判空文件不够, 必须校验格式, 否则会装上一个不能执行的
+# 二进制, 报错点会推迟到真正启动服务时才暴露。
+download_binary() {
+    local target="$1" gh_path="$2" name="$3"
+    if ! download_with_fallback "$target" "$gh_path"; then
+        return 1
+    fi
+    if ! crt_validate_binary "$target"; then
+        echo "   ⚠️  $name 下载内容不是有效的可执行文件 (大小 $(wc -c < "$target" 2>/dev/null || echo 0) 字节)"
+        rm -f "$target"
+        return 1
+    fi
+    return 0
+}
+
+# 已存在的二进制也要校验: 上一次半截下载留下的文件同样不可用
+if [ -x "$TTYD_BIN" ] && crt_validate_binary "$TTYD_BIN"; then
+    echo "   ✅ ttyd 已存在, 跳过下载"
+else
+    [ -x "$TTYD_BIN" ] && echo "   ⚠️  已存在的 ttyd 不可用 (损坏或非可执行文件), 重新下载"
     echo "   下载 ttyd v${TTYD_VERSION} (${TTYD_ASSET})..."
-    if download_with_fallback "$TTYD_BIN" "tsl0922/ttyd/releases/download/${TTYD_VERSION}/${TTYD_ASSET}"; then
+    if download_binary "$TTYD_BIN" "tsl0922/ttyd/releases/download/${TTYD_VERSION}/${TTYD_ASSET}" ttyd; then
         chmod +x "$TTYD_BIN"
-        if [ -s "$TTYD_BIN" ]; then echo "   ✅ ttyd 下载成功"; else echo "   ❌ ttyd 文件为空"; exit 1; fi
+        echo "   ✅ ttyd 下载成功"
     else
         echo "   ❌ ttyd 下载失败 (镜像与直连均不可用)"
         echo "      可手动下载放到: $TTYD_BIN"
         echo "      https://github.com/tsl0922/ttyd/releases"
         exit 1
     fi
-else
-    echo "   ✅ ttyd 已存在, 跳过下载"
 fi
 
-if [ ! -x "$CF_BIN" ]; then
+if [ -x "$CF_BIN" ] && crt_validate_binary "$CF_BIN"; then
+    echo "   ✅ cloudflared 已存在, 跳过下载"
+else
+    [ -x "$CF_BIN" ] && echo "   ⚠️  已存在的 cloudflared 不可用 (损坏或非可执行文件), 重新下载"
     echo "   下载 cloudflared v${CF_VERSION} (${CF_ASSET})..."
-    if download_with_fallback "$CF_BIN" "cloudflare/cloudflared/releases/download/${CF_VERSION}/${CF_ASSET}"; then
+    if download_binary "$CF_BIN" "cloudflare/cloudflared/releases/download/${CF_VERSION}/${CF_ASSET}" cloudflared; then
         chmod +x "$CF_BIN"
-        if [ -s "$CF_BIN" ]; then echo "   ✅ cloudflared 下载成功"; else echo "   ❌ cloudflared 文件为空"; exit 1; fi
+        echo "   ✅ cloudflared 下载成功"
     else
         echo "   ❌ cloudflared 下载失败 (镜像与直连均不可用)"
         echo "      可手动下载放到: $CF_BIN"
         echo "      https://github.com/cloudflare/cloudflared/releases"
         exit 1
     fi
-else
-    echo "   ✅ cloudflared 已存在, 跳过下载"
 fi
 
 # ============================================================

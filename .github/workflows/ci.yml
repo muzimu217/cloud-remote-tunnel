@@ -45,11 +45,15 @@ jobs:
       - name: 构造假二进制并打包
         run: |
           set -e
-          # 用占位文件替代真实二进制, 只为验证打包/校验/安装链路
+          # 用占位文件替代真实二进制, 只为验证打包/校验/安装链路。
+          # 注意: 必须是带 ELF magic 的够大文件 —— install.sh 会校验格式,
+          # 用 sh 脚本或 HTML 占位会被正确地拒绝(见后面"坏二进制"步骤)。
           mkdir -p /tmp/fake
-          printf '#!/bin/sh\necho fake-ttyd\n' > /tmp/fake/ttyd
-          printf '#!/bin/sh\necho fake-cloudflared\n' > /tmp/fake/cloudflared
-          chmod +x /tmp/fake/ttyd /tmp/fake/cloudflared
+          for b in ttyd cloudflared; do
+            printf '\177ELF' > "/tmp/fake/$b"
+            head -c 600000 /dev/zero >> "/tmp/fake/$b"
+            chmod +x "/tmp/fake/$b"
+          done
 
           # 临时覆盖下载函数, 避免 CI 依赖外网
           cat > /tmp/build.sh <<'EOF'
@@ -67,12 +71,14 @@ jobs:
           cp /tmp/fake/cloudflared "$stage/bin/cloudflared"
           chmod +x "$stage/bin/"*
           for f in server-start-robust.sh tunnel-daemon.sh install.sh uninstall.sh verify.sh \
+                   autostart.sh resume.sh \
                    deploy.conf.example cloudflared-config.yml README-BUNDLE.md; do
             cp "$f" "$stage/"
           done
           cp README-BUNDLE.md "$stage/README.md"
           cp lib/common.sh "$stage/lib/common.sh"
           chmod +x "$stage/install.sh" "$stage/uninstall.sh" "$stage/verify.sh" \
+                   "$stage/autostart.sh" "$stage/resume.sh" \
                    "$stage/server-start-robust.sh" "$stage/tunnel-daemon.sh"
           printf 'linux-amd64\n' > "$stage/.arch"
           HC="$(crt_hash_cmd)"
@@ -119,6 +125,25 @@ jobs:
           fi
           echo "✅ 架构不匹配被正确拒绝"
           grep -q '架构不匹配' /tmp/arch.log
+
+      - name: 坏二进制检测 (镜像错误页, 应拒绝)
+        run: |
+          set -e
+          rm -rf /tmp/w && mkdir -p /tmp/w && cd /tmp/w
+          tar xzf "$GITHUB_WORKSPACE"/dist/crt-bundle-*.tar.gz
+          cd crt-bundle-*
+          # 模拟镜像返回 HTTP 200 的 HTML 错误页, 并同步清单让 SHA256 通过,
+          # 以此单独验证 ELF 格式校验这一道防线
+          printf '<html><body>502 Bad Gateway</body></html>\n' > bin/ttyd
+          HC="$(command -v sha256sum)"
+          ( find . -type f ! -name SHA256SUMS -exec $HC {} \; | LC_ALL=C sort -k2 > SHA256SUMS )
+          if bash install.sh >/tmp/badbin.log 2>&1; then
+            echo "❌ 坏二进制仍安装成功, 格式校验失效"
+            cat /tmp/badbin.log
+            exit 1
+          fi
+          echo "✅ 坏二进制被正确拒绝"
+          grep -q '不是有效的 Linux 可执行文件' /tmp/badbin.log
 
       - name: 部署清单校验 verify.sh (篡改应被检出)
         run: |

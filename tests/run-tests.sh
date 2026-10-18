@@ -56,6 +56,18 @@ section() {
     printf '\n\033[1m%s\033[0m\n' "$1"
 }
 
+# 生成一个"看起来像 Linux 可执行文件"的占位物:
+# ELF magic + 指定体积的零填充。用于测试夹具, 不依赖真实下载。
+# 用法: make_fake_elf <路径> [总字节数]
+make_fake_elf() {
+    local p="$1" size="${2:-600000}"
+    printf '\177ELF' > "$p"
+    if command -v head >/dev/null 2>&1; then
+        head -c "$size" /dev/zero >> "$p" 2>/dev/null
+    fi
+    chmod +x "$p"
+}
+
 # ---------------------------------------------------------------
 section "1. Shell 语法检查"
 # ---------------------------------------------------------------
@@ -360,9 +372,8 @@ TMPI="$TMPD/instest"
 mkdir -p "$TMPI/bin" "$TMPI/lib" "$TMPI/home"
 cp "$ROOT/install.sh" "$TMPI/"
 cp "$ROOT/lib/common.sh" "$TMPI/lib/"
-printf '#!/bin/sh\ntrue\n' > "$TMPI/bin/ttyd"
-printf '#!/bin/sh\ntrue\n' > "$TMPI/bin/cloudflared"
-chmod +x "$TMPI/bin/ttyd" "$TMPI/bin/cloudflared"
+make_fake_elf "$TMPI/bin/ttyd"
+make_fake_elf "$TMPI/bin/cloudflared"
 printf '#!/bin/bash\ntrue\n' > "$TMPI/server-start-robust.sh"
 printf 'linux-%s\n' "$(crt_detect_arch)" > "$TMPI/.arch"
 : > "$TMPI/SHA256SUMS"
@@ -379,6 +390,69 @@ case "$INST_OUT" in
     *"已生成完整性清单"*) ok "install.sh 生成部署清单" ;;
     *) bad "install.sh 生成部署清单" "未生成" ;;
 esac
+
+# ---- 二进制格式校验 (镜像错误页 / 半截下载 不得被当成可执行文件) ----
+VB="$TMPD/validate"
+mkdir -p "$VB"
+make_fake_elf "$VB/good" 600000
+printf '<html><body>502 Bad Gateway</body></html>\n' > "$VB/html"
+head -c 1000 /dev/zero > "$VB/tiny"                       # 有 ELF 无 magic 都不算
+printf '\177ELF' > "$VB/truncated"
+printf 'not an elf but big enough padding to pass size check...' > "$VB/text"
+head -c 600000 /dev/zero >> "$VB/text"
+
+# 逐条验证 crt_validate_binary 的判定
+vlib() { ( . "$ROOT/lib/common.sh"; crt_validate_binary "$@" ); }
+
+assert_ok   "校验: 正常 ELF 通过"      vlib "$VB/good"
+assert_fail "校验: HTML 错误页拒绝"    vlib "$VB/html"
+assert_fail "校验: 4 字节半截文件拒绝" vlib "$VB/truncated"
+assert_fail "校验: 大文本文件拒绝"     vlib "$VB/text"
+assert_fail "校验: 不存在的文件拒绝"   vlib "$VB/nope"
+
+# 体积下限必须真的生效: 同一内容低于下限要被拒
+assert_fail "校验: 低于体积下限拒绝"   vlib "$VB/good" 1000000
+
+# 打包脚本必须走"下载即校验"的入口, 不能直接用裸下载函数
+if grep -q 'fetch_binary' "$ROOT/make-bundle.sh" && \
+   ! grep -qE 'fetch_with_mirror "\$stage/bin' "$ROOT/make-bundle.sh"; then
+    ok "打包: 下载后校验 ELF"
+else
+    bad "打包: 下载后校验 ELF" "仍在使用未校验的下载入口"
+fi
+if grep -q 'fetch_binary' "$ROOT/make-bundle.sh"; then ok "打包脚本定义校验下载"; else bad "打包脚本定义校验下载" "未找到"; fi
+
+# 部署脚本: 下载与"已存在"两条路径都必须校验
+if grep -q 'download_binary' "$ROOT/server-start-robust.sh"; then ok "部署: 下载后校验 ELF"; else bad "部署: 下载后校验 ELF" "未找到"; fi
+if grep -q 'crt_validate_binary "\$TTYD_BIN"' "$ROOT/server-start-robust.sh" && \
+   grep -q 'crt_validate_binary "\$CF_BIN"' "$ROOT/server-start-robust.sh"; then
+    ok "部署: 已存在二进制也校验"
+else
+    bad "部署: 已存在二进制也校验" "已存在路径未校验"
+fi
+
+# 安装脚本: 包内二进制必须校验
+if grep -q 'crt_validate_binary' "$ROOT/install.sh"; then ok "安装: 校验包内二进制"; else bad "安装: 校验包内二进制" "未找到"; fi
+
+# 反面用例: 把 HTML 错误页当二进制, install.sh 必须拒绝安装
+TMPI2="$TMPD/instest2"
+mkdir -p "$TMPI2/bin" "$TMPI2/lib" "$TMPI2/home"
+cp "$ROOT/install.sh" "$TMPI2/"
+cp "$ROOT/lib/common.sh" "$TMPI2/lib/"
+printf '<html><body>404 Not Found from mirror</body></html>\n' > "$TMPI2/bin/ttyd"
+make_fake_elf "$TMPI2/bin/cloudflared"
+printf 'linux-%s\n' "$(crt_detect_arch)" > "$TMPI2/.arch"
+: > "$TMPI2/SHA256SUMS"
+INST2_OUT="$(cd "$TMPI2" && HOME="$TMPI2/home" bash install.sh 2>&1)"
+case "$INST2_OUT" in
+    *"不是有效的 Linux 可执行文件"*) ok "安装: 拒绝 HTML 错误页" ;;
+    *) bad "安装: 拒绝 HTML 错误页" "输出: $(printf '%s' "$INST2_OUT" | head -3)" ;;
+esac
+if [ -f "$TMPI2/home/.local/bin/ttyd" ]; then
+    bad "安装: 拒绝后未安装" "坏文件仍被装到 bin"
+else
+    ok "安装: 拒绝后未安装"
+fi
 
 # ---------------------------------------------------------------
 section "8. 自启动 (autostart / resume)"

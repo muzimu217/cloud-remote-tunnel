@@ -86,6 +86,21 @@ fetch_with_mirror() {
     fetch_file "https://github.com/${gh_path}" "$target"
 }
 
+# 下载 + 格式校验: 镜像可能返回 HTTP 200 的 HTML 错误页或半截文件,
+# curl 会视为成功; 必须校验 ELF 才允许进入打包流程。
+fetch_binary() {
+    local target="$1" gh_path="$2"
+    if ! fetch_with_mirror "$target" "$gh_path"; then
+        return 1
+    fi
+    if ! crt_validate_binary "$target"; then
+        echo "   ⚠️  下载内容不是有效的可执行文件 (大小 $(wc -c < "$target" 2>/dev/null || echo 0) 字节), 拒绝使用"
+        rm -f "$target"
+        return 1
+    fi
+    return 0
+}
+
 build_one() {
     local arch="$1" ttyd_asset cf_asset
     if ! crt_ttyd_asset "$arch" >/dev/null 2>&1; then
@@ -105,13 +120,13 @@ build_one() {
     mkdir -p "$stage/bin" "$stage/lib"
 
     echo "[$arch] 下载 ttyd v$TTYD_VERSION ..."
-    if ! fetch_with_mirror "$stage/bin/ttyd" "tsl0922/ttyd/releases/download/${TTYD_VERSION}/${ttyd_asset}"; then
+    if ! fetch_binary "$stage/bin/ttyd" "tsl0922/ttyd/releases/download/${TTYD_VERSION}/${ttyd_asset}"; then
         echo "❌ ttyd 下载失败"; return 1
     fi
     echo "  ✅ ttyd $(du -h "$stage/bin/ttyd" | awk '{print $1}')"
 
     echo "[$arch] 下载 cloudflared v$CF_VERSION ..."
-    if ! fetch_with_mirror "$stage/bin/cloudflared" "cloudflare/cloudflared/releases/download/${CF_VERSION}/${cf_asset}"; then
+    if ! fetch_binary "$stage/bin/cloudflared" "cloudflare/cloudflared/releases/download/${CF_VERSION}/${cf_asset}"; then
         echo "❌ cloudflared 下载失败"; return 1
     fi
     echo "  ✅ cloudflared $(du -h "$stage/bin/cloudflared" | awk '{print $1}')"

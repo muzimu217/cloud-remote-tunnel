@@ -73,6 +73,19 @@ for f in bin/ttyd bin/cloudflared; do
 done
 echo "✅ 架构匹配: $EXPECT"
 
+# 二进制必须是真正的可执行文件: 打包时镜像返回 HTML 错误页或半截下载,
+# 光看"文件非空"是发现不了的, 必须在安装前拦住。
+for f in bin/ttyd bin/cloudflared; do
+    if command -v crt_validate_binary >/dev/null 2>&1; then
+        crt_validate_binary "$HERE/$f" || {
+            echo "❌ 包内 $f 不是有效的 Linux 可执行文件 (可能打包时下载未完成)"
+            echo "   请在本机重新打包: ./make-bundle.sh"
+            exit 1
+        }
+    fi
+done
+echo "✅ 二进制格式校验通过"
+
 # ---- 2) 完整性校验 (SHA256) ----
 HASH_CMD=""
 if command -v crt_hash_cmd >/dev/null 2>&1; then
