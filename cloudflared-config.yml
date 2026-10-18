@@ -1,20 +1,32 @@
-tunnel: XXX...your-tunnel-id
-credentials-file: ~/.cloudflared/openclaw-tunnel.json
+# ============================================================
+# Cloud Remote Tunnel — cloudflared 隧道配置模板 (config 模式)
+# ============================================================
+# 部署时由 server-start-robust.sh 自动替换以下占位符(无需手动编辑):
+#   TUNNEL_ID    ← 隧道 ID           (自动从 tunnel-credentials.json 读取)
+#   CRED_FILE    ← 凭证文件路径       (自动)
+#   DOMAIN       ← 你的专属域名       (来自 deploy.conf 的 TUNNEL_DOMAIN)
+#   TTYD_PORT    ← 终端端口           (来自 deploy.conf, 默认 7681)
+#
+# 生成方式: 本地运行 setup-tunnel.sh <域名> 会自动创建隧道并产出
+#           tunnel-credentials.json; 也可在 Cloudflare 控制台手动创建隧道。
+# ============================================================
 
-# Web 访问
+tunnel: __TUNNEL_ID__
+credentials-file: __CRED_FILE__
+
 ingress:
-  # Web 终端（ttyd）路径优先匹配
-  - hostname: your-domain.example.com
+  # Web 终端 (ttyd) — 路径 /terminal* 优先匹配
+  - hostname: __DOMAIN__
     path: /terminal*
-    service: http://localhost:7681
+    service: http://localhost:__TTYD_PORT__
 
-  # Web 访问
-  - hostname: your-domain.example.com
-    service: http://localhost:18789
+  # 其他本地服务示例 (按需取消注释):
+  # - hostname: __DOMAIN__
+  #   service: http://localhost:18789
 
-  # SSH 隧道访问（可选）
-  - hostname: ssh.your-domain.example.com
-    service: ssh://localhost:22
+  # SSH 隧道 (可选, 需容器内运行 sshd):
+  # - hostname: ssh.__DOMAIN__
+  #   service: ssh://localhost:22
 
   # 默认 404
   - service: http_status:404

@@ -2,411 +2,421 @@
 
 > 前身 `mclaw-remote-tunnel`：最初为**中国移动 MClaw（小龙虾）**定制的内网穿透配置包，现已泛化为任意 **Linux 云服务器 / 云端容器**通用的远程终端方案。
 
-把隔离的云端环境通过 **Cloudflare Tunnel** 挂到你自己的域名上，本地 `./connect.sh` 一条命令直连远程终端——像 SSH 一样，给云端跑的 AI agent / coding 工具留一个摸得着的口子。同时支持 MClaw 备份还原玩法与**模型替换**自定义 AI。
+把隔离的云端环境通过 **Cloudflare Tunnel** 挂到你自己的域名上；本地 `./connect.sh` 一条命令直连远程终端——像 SSH 一样，给云端跑的 AI agent / coding 工具留一个摸得着的口子。
+
+**v3.1 新特性**：架构自适应 (amd64/arm64/armv7/386) · 零硬编码凭证（自动生成随机密码）· 三种隧道模式自动选择 · 一键部署输出"连接卡片" · 环境变量免密模式（AI / CI 友好）· `setup-tunnel.sh` 域名接入自动化 · **文件上传/下载** · **71 项自动化测试 + CI**。
 
 ---
 
 ## 核心功能
 
-- ✅ **内网穿透** - Cloudflare Tunnel 远程访问 OpenClaw
-- ✅ **进程守护** - 自动检测重启，持久化运行
-- ✅ **网关令牌** - 自动获取并输出访问令牌
-- ✅ **模型替换** - 通过备份还原方式替换内置模型
-- ✅ **国内加速** - 使用 gh-proxy 镜像下载二进制文件
-- ✅ **本地一键连接** - 服务器部署后，本地一条命令直连远程终端（无需浏览器）
+- ✅ **一键部署** - `bash server-start-robust.sh` 自动完成全部配置并输出连接卡片
+- ✅ **架构自适应** - 自动检测 x86_64 / arm64 / armv7 / 386 并下载对应二进制
+- ✅ **零硬编码凭证** - 终端密码自动生成（也可环境变量注入），不再需要手改脚本
+- ✅ **三种隧道模式** - 命名隧道（专属域名）/ Token（控制台托管）/ 临时隧道（免账号测试）
+- ✅ **进程守护** - 每 10 秒巡检，ttyd / cloudflared 挂掉自动拉起；容器重启后可快速恢复
+- ✅ **自启动** - 默认装好两条独立通道（crontab `@reboot` + 登录钩子），无 systemd 的容器重启后自动恢复，可一条命令关闭
+- ✅ **本地一键连接** - 纯 Python 标准库实现的直连客户端，无需浏览器
+- ✅ **文件传输** - `--upload` / `--download` 复用终端会话，远端无需 sshd 或额外端口
+- ✅ **AI / 脚本免密调用** - 环境变量注入凭证，`--check` 自检、`--json` 结构化输出、退出码透传
+- ✅ **域名接入自动化** - `setup-tunnel.sh` 一键完成建隧道 + 绑域名 + 生成部署包
+- ✅ **国内加速** - 二进制下载支持 gh-proxy 镜像，且自动回退 GitHub 直连
+- ✅ **离线部署包** - 本机打包 → 服务器解压即启动（无需联网，含完整性校验与干净卸载）
+- ✅ **防误改** - 部署清单 + `verify.sh` 校验 + 可选只读锁定 + 守护进程自动巡检
+- ✅ **可验证** - `tests/run-tests.sh` 116 项测试，GitHub Actions 自动跑 shellcheck + 测试 + 打包冒烟
 
 ---
 
-## 本地一键连接（推荐）
+## 快速开始（3 步）
 
-服务器部署完成后，在**本地电脑**上即可像 SSH 一样直连远程终端。纯 Python 标准库实现，无任何依赖，macOS / Linux 开箱即用。
+### 第 1 步 · 本地接入域名（有专属域名时）
 
-### 1. 配置服务器信息
+在**本地电脑**上运行（需要浏览器登录一次 Cloudflare）：
 
 ```bash
-cp connect.json.example connect.json
-vi connect.json   # 填入你的域名、用户名、密码
+./setup-tunnel.sh tunnel.example.com
 ```
 
-### 2. 连接
+脚本会自动：登录 Cloudflare → 创建隧道（已存在则复用）→ 绑定域名 DNS → 生成 `tunnel-credentials.json` + `deploy.conf`。
+
+> 没有域名？跳过此步，服务端会用**临时隧道模式**（trycloudflare.com 随机地址，仅供测试）。
+
+### 第 2 步 · 部署到云容器
+
+把本目录（或整个压缩包）上传到云容器任意目录，然后：
 
 ```bash
-./connect.sh myserver              # 交互式终端（Ctrl-] 退出，其余按键全部透传）
-./connect.sh myserver "uptime"     # 执行单条命令，输出后退出
-```
-
-> 💡 网络受限的环境（如国内直连 Cloudflare 不稳）会在直连失败后自动尝试本机 `127.0.0.1:7897` HTTP 代理兜底，也可在 `connect.json` 中用 `proxy` 字段显式指定。
-
-### 3. 首次部署到新服务器
-
-```bash
-# 上传配置包到服务器任意目录后：
 cd remote
-./server-start-robust.sh           # 自动下载依赖、启动隧道+终端+守护进程
+bash server-start-robust.sh
 ```
 
-> 🔒 **安全建议**：`openclaw / OpenClaw@2026` 是文档示例口令，且 ttyd 终端等同于服务器上运行脚本的用户的 shell。部署后请立即修改 `server-start-robust.sh` 和 `tunnel-daemon.sh` 中 `-c openclaw:OpenClaw@2026` 为你自己的强口令，再执行脚本。含真实密钥的 `openclaw-tunnel.json`、`connect.json` 已列入 `.gitignore`，切勿提交或分享。
+脚本自动：检测架构 → 下载 ttyd/cloudflared（国内镜像）→ 生成随机密码 → 启动隧道 + 终端 + 守护进程 → 输出**连接卡片**：
 
----
+```
+==============================================
+  📋 连接卡片 (Connection Card)
+==============================================
+  模式    : config
+  地址    : https://tunnel.example.com/terminal/
+  用户名  : openclaw
+  密码    : <自动生成的随机密码>
+----------------------------------------------
+  自检: 本地终端 ✓ | 隧道 ✓
+----------------------------------------------
+  本地免密连接 (在本地电脑执行):
+  [A] 登记到 connect.json (推荐):
+      TUNNEL_URL='https://tunnel.example.com' TUNNEL_USER='openclaw' TUNNEL_PASSWORD='...' \
+        ./connect.sh --add-server myserver
+  [B] 环境变量直连:
+      TUNNEL_URL='...' TUNNEL_USER='...' TUNNEL_PASSWORD='...' ./connect.sh "命令"
+==============================================
+```
 
-> ⚠️ **【注意事项】** 在进行以下任何操作之前，请务必先在中国移动 APP 的 **MClaw（小龙虾）** 界面中 **多做几次备份！多做几次备份！** 以防操作失误导致数据丢失或配置异常，备份是最可靠的恢复手段。
-
-> 💡 **【使用前必读】** 在正式操作之前，强烈建议先前往云服务器（如腾讯云 Cloud Studio：[ide.cloud.tencent.com](https://ide.cloud.tencent.com)）上进行测试验证，确保配置准确无误后再应用到 MClaw 中。云服务器测试命令：
->
-> ```bash
-> apt update && apt install -y wget curl procps
-> cd remote
-> ./server-start-robust.sh
-> ```
-
----
-
-## 使用方法
-
-### 步骤 1：下载此配置包
-
-点击右上角 **「Code」** → **「Download ZIP」** 下载，或：
+### 第 3 步 · 本地连接
 
 ```bash
-git clone https://github.com/muzimu217/cloud-remote-tunnel.git
+TUNNEL_URL='https://tunnel.example.com' TUNNEL_USER='openclaw' TUNNEL_PASSWORD='...' \
+  ./connect.sh --add-server myserver     # 登记一次（写入 connect.json，之后直接按名称连接）
+
+./connect.sh myserver                     # 交互式终端（Ctrl-] 退出，其余按键全部透传）
+./connect.sh myserver "uptime"            # 执行单条命令，输出后退出（退出码透传）
 ```
 
-### 步骤 2：下载 MClaw 备份文件（重点！）
+> 💡 网络受限的环境（如国内直连 Cloudflare 不稳）会在直连失败后自动尝试本机 `127.0.0.1:7897` HTTP 代理兜底（可用 `CRT_PROXY_FALLBACK` 环境变量修改，置空禁用）。
 
-1. 打开 **移动网盘** APP 或网页版
-2. 进入你存放 OpenClaw 备份的路径
-3. 找到刚刚备份的系统 zip 文件（文件名类似 `openclaw-xxx-时间戳.zip`）
-4. **下载到本地**
+---
 
-⚠️ **注意事项**：
-- 记住这个 zip 文件的**完整文件名**（包括前缀和时间戳）
-- 记住这个 zip 文件存放的**路径位置**
-- 后面打包和上传时必须完全一致！
+## 文件传输
 
-### 步骤 3：解压备份并放入配置包
+目标容器里没有 sshd、也不方便开额外端口时，用同一条终端会话传文件：
 
-1. 解压下载的 zip 文件
-2. 将此配置包（`remote` 文件夹）放入解压后的根目录：
-
-```
-openclaw-xxx-时间戳/          ← 解压后的根目录
-├── agents/
-├── devices/
-├── remote/                   ← 放这里！根目录
-│   ├── openclaw-tunnel.json
-│   ├── cloudflared-config.yml
-│   ├── server-start-robust.sh
-│   └── README.md
-├── workspace/
-└── ...
+```bash
+./connect.sh myserver --upload ./build.tar.gz                  # 传到远端家目录
+./connect.sh myserver --upload ./build.tar.gz /opt/app/        # 指定远端目录
+./connect.sh myserver --download /var/log/app.log              # 下载到本地同名文件
+./connect.sh myserver --download /var/log/app.log ./app.log    # 指定本地路径
 ```
 
-### 步骤 4：配置 Tunnel（如需内网穿透）
+- **零依赖**：远端不需要 `sshd` / `scp` / `rsync`，只要有 `base64` 和 `tail`（几乎所有 Linux 都有）；
+- **可靠**：传输前关闭终端回显避免标记歧义，分块确认 + 大小校验，失败即中止（下载先写 `.part` 再改名）；
+- **`--json`**：返回 `{"ok":true,"action":"upload","bytes":...,"seconds":...}`，便于 AI 判断。
 
-#### 4.1 登录 Cloudflare
+### 实测性能与边界
 
-访问：**https://dash.cloudflare.com/** → 登录账号
+在 Cloudflare quick tunnel 上实测（本地 → 隧道 → 服务端）：
 
-#### 4.2 创建 Tunnel
+| 文件大小 | 结果 | 耗时 | 校验 |
+|---|---|---|---|
+| 200 KB | ✅ 成功 | 24.5s | SHA256 一致 |
+| 2 MB | ✅ 成功 | 186s | SHA256 一致 |
+| 5 MB | ⚠️ 不稳定 | — | 中途超时 |
 
-1. 点击 **「Zero Trust」** → **「Networks」** → **「Tunnels」**
-2. 点击 **「Create a tunnel」**
-3. 选择 **「Cloudflared」**
-4. 输入名称如 `openclaw-tunnel`，保存
+**吞吐约 11 KB/s**，主要成本是每次往返 ~0.5s。这是 ttyd 协议的固有边界——它设计给交互式终端，不是文件传输协议。
 
-#### 4.3 获取配置信息
+**因此：4MB 以内可直接用**（默认护栏，实测 2MB 稳定、5MB 不稳），超过会提示改用专用通道：
 
-创建后记录以下信息：
+```bash
+# 大文件推荐 croc：两端各一个 9MB 单文件，P2P 优先，不需要域名
+croc send bigfile.zip          # 一端
+croc 2450-fiesta-video-joshua  # 另一端
+```
 
-| 字段 | 位置 | 格式 |
+`--force` 可强制尝试超过建议上限的文件。
+
+> **关于 CF 的 100MB 限制**：实测确认它作用于 **HTTP 请求体**（101MB POST 返回 `413 Payload Too Large`，99MB 正常）。我们的传输走 **WebSocket 流**，单帧发到 16MB 也不触发该限制——所以限制点不是 100MB，而是终端通道本身的吞吐和稳定性。换句话说：CF 不限你传多大，但终端通道传不快。
+
+---
+
+## 离线部署包（解压即启动，服务器无需联网）
+
+服务器连不上 GitHub、或想固定一套版本部署时，在本机打包后上传：
+
+```bash
+./make-bundle.sh --arch amd64        # 或 --all 同时打 amd64 + arm64
+# 产物: dist/crt-bundle-3.0.0-linux-amd64.tar.gz (+ .sha256 校验文件)
+```
+
+上传服务器后，一条命令完成部署（校验 → 安装 → 自动启动 → 输出连接卡片）：
+
+```bash
+tar xzf crt-bundle-3.0.0-linux-amd64.tar.gz
+cd crt-bundle-3.0.0-linux-amd64
+bash install.sh
+```
+
+- **无需联网**：ttyd / cloudflared 二进制已内置于包中；
+- **默认装好自启动**：`@reboot` + 登录钩子两条通道（`--no-autostart` / `AUTOSTART=no` 可跳过）；
+- **完整性校验**：含 SHA256SUMS，文件被改动会被拒绝安装；
+- **默认不夹带凭证**：如用 `--config` 带入配置，密码 / Token 字段会被自动剔除（`--allow-secrets` 可显式保留，仅限自用）；
+- **防误改**：安装后生成部署清单，`bash verify.sh` 随时校验；`--lock` 可设只读（守护进程每 10 分钟自动巡检一次）；
+- **干净可审计**：全部脚本明文可读（不做混淆），只写用户目录、不改系统文件；
+- **可退出**：`bash uninstall.sh [--purge]` 一键干净卸载（含解锁处理）。
+
+---
+
+## AI / 自动化免密调用（重点）
+
+给 AI agent、CI、脚本调用做了完整设计——**全程无交互、无密码提示**，凭据通过环境变量注入：
+
+```bash
+# 免密直连（无需 connect.json）：
+export TUNNEL_URL="https://tunnel.example.com"
+export TUNNEL_USER="openclaw"
+export TUNNEL_PASSWORD="<部署卡片里的密码>"
+
+./connect.sh "systemctl status nginx"       # 执行命令，退出码透传
+./connect.sh --json "make build"            # JSON 输出: {"ok":..., "exit_code":..., "output":...}
+./connect.sh --check                        # 连通性自检 (token 获取 + WebSocket 握手)
+```
+
+- **退出码透传**：远端命令的退出码原样返回（超时 124，连接失败 1，用法错误 2），AI 可直接判断成败；
+- **`--json`**：结构化输出，便于程序解析；
+- **`--check`**：调用前快速验证链路（token + 握手 + 回显），失败时给出明确原因；
+- **凭证不落地**：环境变量方式不会写任何文件；`--add-server` 登记的文件权限为 600 且已被 `.gitignore` 忽略。
+
+---
+
+## 三种隧道模式
+
+| 模式 | 适用场景 | 地址 | 准备 |
+|------|---------|------|------|
+| `config`（推荐） | 有专属域名，长期使用 | `https://你的域名/terminal/` | `setup-tunnel.sh` 生成凭证 |
+| `token` | 偏爱在 Cloudflare 控制台管理路由 | 控制台配置的域名 | 控制台创建隧道拿 Token |
+| `quick` | 无账号快速测试 | `https://随机.trycloudflare.com` | 无（地址会变化） |
+
+模式由 `deploy.conf` / 环境变量的 `TUNNEL_MODE` 控制（默认 `auto` 自动选择）。
+
+---
+
+## 配置参考
+
+### 服务端 `deploy.conf`（复制 `deploy.conf.example`）
+
+| 变量 | 说明 | 默认 |
 |------|------|------|
-| Tunnel ID | 页面顶部 | UUID 格式 |
-| Account Tag | 点击「View configuration details」 | 32位字符 |
-| Tunnel Secret | 创建时显示 | 长字符串（只显示一次！） |
+| `TTYD_USER` | 终端用户名 | `openclaw` |
+| `TTYD_PASS` | 终端密码（留空自动生成） | 随机 |
+| `TTYD_PORT` | 终端端口 | `7681` |
+| `TUNNEL_MODE` | `auto` / `config` / `token` / `quick` | `auto` |
+| `TUNNEL_DOMAIN` | 专属域名（config 模式必填） | — |
+| `TUNNEL_TOKEN` | 隧道 Token（token 模式使用） | — |
+| `GH_MIRROR` | 二进制下载镜像 | `https://gh-proxy.com` |
 
-#### 4.4 填入配置文件
-
-**openclaw-tunnel.json**：
-```json
-{
-  "AccountTag": "你的AccountTag",
-  "TunnelID": "你的TunnelID",
-  "TunnelName": "openclaw-tunnel",
-  "TunnelSecret": "你的TunnelSecret"
-}
-```
-
-**cloudflared-config.yml**：
-```yaml
-tunnel: 你的TunnelID
-ingress:
-  - hostname: 你的域名.com
-    path: /terminal*
-    service: http://localhost:7681
-  ...
-```
-
-### 步骤 5：打包上传还原（重点！）
-
-⚠️ **注意事项（非常重要）**：
-
-1. **zip 包名一定要和下载的那个备份文件名一模一样！**
-   - 下载的是 `openclaw-1287296976021332797-20260603120000.zip`
-   - 打包时必须用完全相同的名字！
-
-2. **上传到和下载备份包一样的路径**
-   - 直接替换原本的包
-   - 路径不一致会导致还原失败！
-
-打包命令示例：
-```bash
-# 确保包名和原下载文件完全一致（示例）
-zip -r openclaw-1287296976021332797-20260603120000.zip openclaw-1287296976021332797-20260603120000/
-```
-
-不过我希望各位在此实践之前，前往ide.cloud.tencent.com，将备份包上传到自己的云虚拟容器，先进行测试验证，通过之后再上传中国移动的：全部>AI空间>MClaw空间>MClaw备份（备份包名字一定要一致！！！）
-
-### 更新邪修方法2
-
-
-
-上传后在 MClaw 管理界面点击 **「还原系统」**。
-
----
-
-### 更新邪修方法2：云盘直下法（推荐备份还原无效时使用）
-
-> 部分成员反馈备份还原后配置未能生效，如果遇到这种情况，可以使用本方法。
-
-#### 背景
-
-通过对话让 AI 切换模型时，部分内置模型能力较弱，容易在对话过程中出现死机、重置等问题，导致模型替换失败。本方法的核心思路是：
-
-1. **先让 AI 通过下载脚本包启动内网穿透**（避免大量对话消耗 token）
-2. **再手动修改模型配置**（更安全、更可控）
-
-#### 步骤
-
-**1）将下载的配置包上传到云盘空间**
-
-将本仓库下载的 ZIP 包解压后，上传到你的云盘空间（如中国移动云盘），确保文件可通过链接访问。
-
-**2）让 MClaw AI 直接从云盘下载并启动**
-
-在 MClaw 对话界面中，发送以下指令（⚠️ 一定要强调让 AI 从云盘下载，而不是本地操作）：
-
-```
-请帮我完成以下操作：
-1. 从我的云盘空间下载 remote 配置包（链接：你的云盘链接）
-2. 解压到 remote 目录
-3. 执行 server-start-robust.sh 启动内网穿透
-```
-
-![alt text](image.png)
-
-**3）等待内网穿透启动成功**
-
-AI 会自动下载脚本、安装依赖并启动服务。启动成功后会获得访问地址。
-
-**4）手动修改模型（可选）**
-
-内网穿透启动后，通过 Web 终端手动编辑模型配置文件：
+以上均可直接用**环境变量**传入（优先级高于 `deploy.conf`），适合 CI / AI 自动化：
 
 ```bash
-# 编辑模型配置
-vi agents/main/agent/models.json
+TTYD_PASS="强密码" TUNNEL_DOMAIN="tunnel.example.com" bash server-start-robust.sh
 ```
 
-按照下方「模型替换」章节的说明，修改 `providers.router` 中的字段即可。
-
-#### 优点
-
-- ✅ 减少与 AI 的对话轮次，降低 token 消耗
-- ✅ 避免因 AI 模型能力不足导致死机或重置
-- ✅ 先通网络，再改模型，操作更安全可控
-
----
-
-### 步骤 6：备份还原后发送给 AI 的指令（重点！）
-
-系统还原完成后，你需要给 AI 发送以下指令来启动内网穿透服务：
-
-#### 发送给 AI 的指令：
-
-```
-进入 remote 目录，执行 server-start-robust.sh 启动内网穿透
-```
-
-或者更详细的指令：
-
-```
-请帮我启动内网穿透服务：
-1. 先安装依赖：apt update && apt install -y wget curl procps
-2. 进入 remote 目录
-3. 执行 ./server-start-robust.sh
-```
-
-#### AI 会自动执行：
-
-1. 检查并安装前置依赖（wget、curl、procps）
-2. 下载 ttyd 和 cloudflared 二进制文件（国内 gh-proxy 镜像）
-3. 配置 Cloudflare Tunnel
-4. 启动 Web 终端（端口 7681）
-5. 启动 Tunnel 连接
-6. **自动获取网关令牌并输出**
-
-#### 验证启动成功：
-
-AI 启动后，会输出类似以下内容：
-
-```
-==========================================
-🔑 网关令牌 (Gateway Token)
-==========================================
-
-令牌: xxxxxx-xxxxx-xxxxx
-
-Web 界面访问地址:
-https://你的域名.com/chat?session=agent%3Amain%3Amain&token=xxxxxx
-==========================================
-```
-
-**访问地址**：
-- **Web 终端**: `https://你的域名.com/terminal/` （用户名: openclaw / 密码: OpenClaw@2026）
-- **Web 界面**: `https://你的域名.com/chat?session=agent%3Amain%3Amain&token=你的令牌`
-
-⚠️ **重要**：Web 界面需要令牌才能访问，AI 执行脚本后会自动输出令牌，请保存！
-
-![alt text](image-1.png)![alt text](image-2.png)
----
-
----
-
-## 模型替换（可选）
-
-想替换内置模型为 DeepSeek、MiMo、GPT 等，按以下步骤操作：
-
-### 模型配置文件位置
-
-```
-agents/main/agent/models.json
-```
-
-
-### 替换方案
-
-直接修改 `providers.router` 下的三个关键字段：
+### 本地 `connect.json`（复制 `connect.json.example`）
 
 ```json
 {
-  "providers": {
-    "router": {
-      "baseUrl": "https://api.deepseek.com/v1",    ← 改这里
-      "apiKey": "你的API-Key",                      ← 改这里
-      "api": "openai-completions",
-      "models": [
-        {
-          "id": "deepseek-chat",                   ← 改这里
-          "name": "deepseek-chat",                 ← 改这里
-          "api": "openai-completions",
-          "reasoning": false,                      ← 推理模型设为 true
-          ...
-        }
-      ]
-    }
+  "default": "myserver",
+  "proxy": "",
+  "proxy_fallback": "http://127.0.0.1:7897",
+  "servers": {
+    "myserver": { "url": "https://tunnel.example.com", "user": "openclaw", "password": "..." }
   }
 }
 ```
 
-### 需要修改的字段
+### 本地环境变量（免密模式）
 
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| `baseUrl` | API 地址（OpenAI 兼容格式） | `https://api.deepseek.com/v1` |
-| `apiKey` | 你的 API Key | `sk-xxx...` |
-| `models[0].id` | 模型标识 | `deepseek-chat` |
-| `models[0].name` | 模型名称 | `deepseek-chat` |
-| `reasoning` | 推理模型开关 | `true`（如 DeepSeek-R1、MiMo） |
-
-⚠️ **重要**：
-- 不要新建 provider，就地替换 `router` 这个 provider 即可
-- 其他字段（如 `api`、`input`、`contextWindow`）保持不变
-
-### 支持的模型示例
-
-| 模型 | baseUrl | reasoning |
-|------|---------|-----------|
-| DeepSeek Chat | `https://api.deepseek.com/v1` | `false` |
-| DeepSeek R1 | `https://api.deepseek.com/v1` | `true` |
-| MiMo v2.5 Pro | `https://token-plan-sgp.xiaomimimo.com/v1` | `true` |
-| GPT-4o | `https://api.openai.com/v1` | `false` |
-| 本地 Ollama | `http://localhost:11434/v1` | `false` |
-
----
-
-## 人设替换（可选）
-
-想自定义 AI 的性格、身份，修改以下文件：
-
-| 文件 | 用途 |
+| 变量 | 说明 |
 |------|------|
-| `workspace/SOUL.md` | 核心性格和行为规则 |
-| `workspace/IDENTITY.md` | 名字、形象等身份信息 |
-| `workspace/USER.md` | 用户偏好设置 |
-| `workspace/AGENTS.md` | 工作空间指南 |
+| `TUNNEL_URL` / `TUNNEL_USER` / `TUNNEL_PASSWORD` | 免密直连凭据 |
+| `TUNNEL_PROXY` | 代理地址（等价 `--proxy`） |
+| `CRT_PROXY_FALLBACK` | 兜底代理（默认 `http://127.0.0.1:7897`） |
+| `CRT_CONFIG` | connect.json 路径 |
+| `CRT_DEBUG` | 调试日志（`/tmp/crt_debug.log`） |
 
-直接编辑这些 `.md` 文件，然后打包还原即可生效。
+### 服务端文件布局（部署后）
+
+```
+~/.local/bin/ttyd              # Web 终端
+~/.local/bin/cloudflared       # 隧道
+~/.cloud-remote-tunnel/        # 凭证 (600): credentials.env / quick-url.txt
+~/.cloudflared/config.yml      # 隧道配置（config 模式）
+~/connection-card.txt          # 连接卡片 (600)
+~/.local/log/                  # ttyd.log / cloudflared.log / tunnel-daemon.log
+```
 
 ---
 
-## 打包还原注意事项！！！！
+## 项目结构与开发
 
-只要 zip 包名和目录结构与原始备份一致，系统还原时能正常识别加载：
+```
+cloud-remote-tunnel/
+├── lib/common.sh            # 公共库: 版本号/架构映射/URL校验/哈希/清单 (单一来源)
+├── server-start-robust.sh   # 服务端一键部署
+├── tunnel-daemon.sh         # 进程守护 + 完整性巡检
+├── autostart.sh             # 服务端: 自启动管理 (登录钩子 / @reboot)
+├── resume.sh                # 服务端: 幂等恢复入口
+├── setup-tunnel.sh          # 本地: 建隧道 + 绑域名
+├── make-bundle.sh           # 本地: 打离线包
+├── install.sh               # 服务端: 解压即装
+├── verify.sh                # 服务端: 完整性校验 / 只读锁定
+├── uninstall.sh             # 服务端: 干净卸载
+├── connect.py / connect.sh  # 本地连接器 (终端 / 命令 / 文件传输)
+├── tests/run-tests.sh       # 116 项本地测试
+└── .github/workflows/ci.yml # CI: shellcheck + 测试 + 打包冒烟
+```
 
-1. **包名一致** - 和下载时的 zip 文件名完全相同
-2. **目录结构一致** - 顶层目录名也一致（如 `openclaw-1287296976021332797-20260603120000/`）
-3. **上传路径一致** - 上传到移动网盘中和下载时相同的路径
+改动后跑一遍测试（无需网络、无需服务器）：
+
+```bash
+bash tests/run-tests.sh            # 全部用例
+bash tests/run-tests.sh --verbose  # 逐项显示
+```
+
+升级二进制版本只需改 `lib/common.sh` 里的 `CRT_TTYD_VERSION_DEFAULT` / `CRT_CF_VERSION_DEFAULT`，部署与打包脚本会自动跟随。
 
 ---
 
-## 配置信息获取总结
+## 网络环境要求：只需要能出站
 
-| 你需要的信息 | 获取地址 | 步骤 |
-|-------------|---------|------|
-| Cloudflare账号 | https://dash.cloudflare.com/ | 注册/登录 |
-| Tunnel页面 | Networks → Tunnels | 创建 Tunnel |
-| Tunnel ID | 页面顶部 | 直接复制 |
-| Account Tag | 「View configuration details」 | 复制32位字符 |
-| Tunnel Secret | 创建时一次性显示 | 立即保存 |
+这是本方案最关键的性质——**不需要公网 IP、不需要开放任何入站端口、不需要路由器端口映射**：
+
+```
+目标机器（NAT 后 / 隔离内网） --出站 443--> Cloudflare 边缘 <--浏览器/CLI-- 你
+```
+
+- `cloudflared` 主动**向外**连接 Cloudflare 边缘并保持长连接，你的访问请求由 CF 沿这条已有连接反向送进来；
+- 所以**完全隔离的内网也可以访问**：只要目标容器能访问外网 443（哪怕出网经过公司代理、平台网关、NAT），隧道就能建立；
+- 极端受限环境（只放行特定域名白名单）也能用：把 `*.cloudflare.com` / `*.argotunnel.com` / 你的域名加入白名单即可；
+- **不能**用的只有一种情况：目标机器**完全没有任何出网能力**（连 443 都不通）。这种情况任何隧道方案都无解——包括 SSH 反向、frp、ngrok。
+
+> 唯一无法绕过的是"有出网但只允许 HTTP 代理"的场景：此时给 `cloudflared` 配 `HTTPS_PROXY` 环境变量即可（默认安装脚本会探测常见本地代理端口）。
+
+---
+
+## 相关项目
+
+本项目专注**单向访问与控制**：你 → 目标机器，走 Cloudflare Tunnel，只需要出站 443。
+
+配套的**双向对等组网**项目是 [container-mesh](../container-mesh)（机器 ↔ 机器，双向消息、大文件传输、断点续传、纯用户态无 TUN），与本项目定位互补：
+
+| | 本项目（cloud-remote-tunnel） | container-mesh |
+|---|---|---|
+| 方向 | 单向：人 → 机器 | 双向对等：A ↔ B |
+| 传输 | 终端命令 + 中小文件 | 双向消息 + 大文件、断点续传 |
+| 依赖 | 域名 + Cloudflare 账号 | 一个双方可达的中继（可自建） |
+| 权限要求 | 只需出站 443 | 只需出站（纯用户态，无需 TUN / root） |
+| 适合 | 远程运维、AI agent 接管、看日志 | 多机互联、批量同步、双向 RPC |
+
+> 两个项目可以并存：本项目负责"随时能进去看一眼、敲一条命令"，container-mesh 负责"两台机器互相说话、搬大文件"。
 
 ---
 
 ## 常见问题
 
-### Q: zip 包名不一致会怎样？
+### Q: 部署后连不上？
 
-还原会失败！系统找不到备份文件。必须保持文件名完全一致。
+1. 服务端看日志：`tail -30 ~/.local/log/cloudflared.log`；
+2. 本地跑自检：`./connect.sh --check https://你的域名 用户名 密码`；
+3. 国内网络受限时确认兜底代理可用（默认探测 `127.0.0.1:7897`）。
 
-### Q: 上传路径不对会怎样？
+### Q: 容器重启后服务没恢复？
 
-还原时找不到文件。必须上传到和下载时完全相同的路径。
+部署时**已默认装好自启动**，正常情况下不用管。自启动有两条独立通道，任一生效即可：
 
-### Q: 网关令牌怎么获取？
+| 通道 | 触发 | 说明 |
+|------|------|------|
+| crontab `@reboot` | 容器/机器重启 | 无 systemd 也能用 |
+| 登录钩子 (`~/.profile` 标记块) | 每次 SSH 登录 | 幂等，只写一块 |
 
-脚本执行后会自动获取并输出。如果未显示，可在 Web 终端执行：
+两者都调用幂等入口 `resume.sh`（在跑就直接退出，不会重复起进程）：
+
 ```bash
-curl http://localhost:18789/api/token
+bash autostart.sh status    # 看通道状态
+bash autostart.sh enable    # 手动启用 (部署时已自动执行)
+bash autostart.sh disable   # 关闭并清理条目
+bash autostart.sh print-cmd # 输出可粘进容器平台"启动命令"的单行命令
 ```
 
-### Q: 进程守护是什么？
+若两条通道都被清理，手动恢复也很简单（凭证已存 `~/.cloud-remote-tunnel/`，**密码不会变**）：
 
-脚本包含 `tunnel-daemon.sh` 守护进程，每 10 秒检查服务状态：
-- ttyd 或 cloudflared 挂掉会自动重启
-- 服务持久化运行，会话结束不影响
+```bash
+bash ~/.cloud-remote-tunnel/app/resume.sh   # 平时用这条，幂等
+bash install.sh                             # 或重跑完整安装（install.sh --no-autostart 可不装自启动）
+```
+
+### Q: 密码在哪里看？
+
+- 部署时输出的连接卡片；
+- 或服务端 `cat ~/connection-card.txt`（600 权限）；
+- 或 `cat ~/.cloud-remote-tunnel/credentials.env`。
+
+### Q: 换域名 / 换隧道？
+
+重新跑 `./setup-tunnel.sh 新域名`，然后重新部署即可。
 
 ### Q: Tunnel Secret 找不到？
 
-只显示一次。忘了就删除重建 Tunnel，这次立即复制！
+只显示一次。忘了就删除重建 Tunnel（`setup-tunnel.sh` 会自动处理），这次立即复制！
+
+### Q: 我想保留原来的旧版工作流（openclaw-tunnel.json）？
+
+仍然兼容：脚本会优先读取 `tunnel-credentials.json`，找不到时回退 `openclaw-tunnel.json`；旧版 `cloudflared-config.yml`（未替换占位符的）也会被原样复制使用。
+
+---
+
+## 附录：MClaw（小龙虾）备份还原玩法
+
+<details>
+<summary>点击展开（历史教程，MClaw 专用）</summary>
+
+> ⚠️ **【注意事项】** 在进行以下任何操作之前，请务必先在中国移动 APP 的 **MClaw（小龙虾）** 界面中 **多做几次备份！多做几次备份！** 以防操作失误导致数据丢失或配置异常，备份是最可靠的恢复手段。
+
+### 背景
+
+MClaw 是 KVM 虚拟机（非容器），完全支持本方案的所有功能（含 TUN 相关实验）。通过 MClaw 的"备份还原"机制，可以把本配置包注入到云端环境并启动内网穿透。
+
+### 操作步骤
+
+1. **下载 MClaw 备份文件**：打开移动网盘 APP → 找到 `openclaw-xxx-时间戳.zip` → 下载到本地；
+2. **解压备份**，把本仓库（`remote` 文件夹）放入解压后的根目录：
+
+```
+openclaw-xxx-时间戳/          ← 解压后的根目录
+├── agents/
+├── devices/
+├── remote/                   ← 放这里！
+├── workspace/
+└── ...
+```
+
+3. **配置隧道**（如需内网穿透）：按本文档「快速开始」的 `setup-tunnel.sh` 流程生成 `tunnel-credentials.json` 和 `deploy.conf`，一并放入 `remote/`；
+4. **重新打包**（⚠️ 包名必须和下载的完全一致）：
+
+```bash
+zip -r openclaw-1287296976021332797-20260603120000.zip openclaw-1287296976021332797-20260603120000/
+```
+
+5. **上传回原路径**（移动网盘相同位置），在 MClaw 管理界面点「还原系统」；
+6. 还原后对 MClaw 内的 AI 发送指令：`进入 remote 目录，执行 bash server-start-robust.sh`。
+
+### 云盘直下法（备份还原无效时）
+
+1. 将本仓库 ZIP 上传到云盘空间（确保可通过链接访问）；
+2. 让 MClaw AI 执行：`从云盘下载 remote 配置包（链接：…），解压到 remote 目录，执行 bash server-start-robust.sh`；
+3. 等待部署完成，按输出的连接卡片连接。
+
+### 模型替换（可选）
+
+修改 `agents/main/agent/models.json` 中 `providers.router` 的字段（不要新建 provider）：
+
+| 字段 | 示例 |
+|------|------|
+| `baseUrl` | `https://api.deepseek.com/v1` |
+| `apiKey` | 你的 API Key |
+| `models[0].id` / `name` | `deepseek-chat` |
+| `reasoning` | 推理模型设 `true` |
+
+支持：DeepSeek Chat/R1、MiMo、GPT-4o、本地 Ollama 等（OpenAI 兼容格式）。
+
+</details>
 
 ---
 
@@ -414,8 +424,7 @@ curl http://localhost:18789/api/token
 
 感谢 [Linux.do](https://linux.do) 社区的支持与贡献：
 - **JSW** — 信息资讯分享
-- **Yumenosora** — 写给小白的MClaw的轮椅♿️教程分享
-
+- **Yumenosora** — 写给小白的 MClaw 轮椅♿️教程分享
 
 ---
 

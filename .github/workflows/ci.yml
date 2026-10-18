@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell 语法检查
+        run: |
+          set -e
+          for f in *.sh lib/*.sh tests/*.sh; do
+            [ -f "$f" ] || continue
+            bash -n "$f"
+            echo "OK  $f"
+          done
+
+      - name: ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          # 只报 warning 及以上, 避免 style 噪音阻塞 CI
+          shellcheck -S warning *.sh lib/*.sh tests/*.sh
+
+      - name: Python 语法检查
+        run: python3 -m py_compile connect.py
+
+      - name: 运行测试套件
+        run: bash tests/run-tests.sh --verbose
+
+  bundle-smoke:
+    name: 打包冒烟测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构造假二进制并打包
+        run: |
+          set -e
+          # 用占位文件替代真实二进制, 只为验证打包/校验/安装链路
+          mkdir -p /tmp/fake
+          printf '#!/bin/sh\necho fake-ttyd\n' > /tmp/fake/ttyd
+          printf '#!/bin/sh\necho fake-cloudflared\n' > /tmp/fake/cloudflared
+          chmod +x /tmp/fake/ttyd /tmp/fake/cloudflared
+
+          # 临时覆盖下载函数, 避免 CI 依赖外网
+          cat > /tmp/build.sh <<'EOF'
+          set -eu
+          source lib/common.sh
+          WORK_DIR="$PWD"
+          BUILD_DIR="$PWD/build"
+          DIST_DIR="$PWD/dist"
+          VERSION="$CRT_VERSION"
+          rm -rf "$BUILD_DIR" "$DIST_DIR"
+          name="crt-bundle-${VERSION}-linux-amd64"
+          stage="$BUILD_DIR/$name"
+          mkdir -p "$stage/bin" "$stage/lib"
+          cp /tmp/fake/ttyd "$stage/bin/ttyd"
+          cp /tmp/fake/cloudflared "$stage/bin/cloudflared"
+          chmod +x "$stage/bin/"*
+          for f in server-start-robust.sh tunnel-daemon.sh install.sh uninstall.sh verify.sh \
+                   deploy.conf.example cloudflared-config.yml README-BUNDLE.md; do
+            cp "$f" "$stage/"
+          done
+          cp README-BUNDLE.md "$stage/README.md"
+          cp lib/common.sh "$stage/lib/common.sh"
+          chmod +x "$stage/install.sh" "$stage/uninstall.sh" "$stage/verify.sh" \
+                   "$stage/server-start-robust.sh" "$stage/tunnel-daemon.sh"
+          printf 'linux-amd64\n' > "$stage/.arch"
+          HC="$(crt_hash_cmd)"
+          ( cd "$stage" && find . -type f ! -name SHA256SUMS -exec $HC {} \; | LC_ALL=C sort -k2 > SHA256SUMS )
+          mkdir -p "$DIST_DIR"
+          tar -czf "$DIST_DIR/$name.tar.gz" -C "$BUILD_DIR" "$name"
+          ( cd "$DIST_DIR" && $HC "$name.tar.gz" > "$name.tar.gz.sha256" )
+          echo "BUILT $DIST_DIR/$name.tar.gz"
+          EOF
+          bash /tmp/build.sh
+
+      - name: 校验包完整性
+        run: |
+          set -e
+          cd dist
+          sha256sum -c *.sha256
+          tar tzf crt-bundle-*.tar.gz | head -20
+
+      - name: 篡改检测 (应拒绝)
+        run: |
+          set -e
+          rm -rf /tmp/x && mkdir -p /tmp/x && cd /tmp/x
+          tar xzf "$GITHUB_WORKSPACE"/dist/crt-bundle-*.tar.gz
+          cd crt-bundle-*
+          printf 'X' | dd of=bin/ttyd bs=1 seek=10 conv=notrunc status=none
+          if bash install.sh >/tmp/install.log 2>&1; then
+            echo "❌ 篡改后仍安装成功, 校验失效"
+            cat /tmp/install.log
+            exit 1
+          fi
+          echo "✅ 篡改被正确拒绝"
+          grep -q '校验失败' /tmp/install.log
+
+      - name: 架构不匹配检测 (应拒绝)
+        run: |
+          set -e
+          rm -rf /tmp/y && mkdir -p /tmp/y && cd /tmp/y
+          tar xzf "$GITHUB_WORKSPACE"/dist/crt-bundle-*.tar.gz
+          cd crt-bundle-*
+          printf 'linux-arm64\n' > .arch
+          if bash install.sh >/tmp/arch.log 2>&1; then
+            echo "❌ 架构不匹配仍安装成功"
+            exit 1
+          fi
+          echo "✅ 架构不匹配被正确拒绝"
+          grep -q '架构不匹配' /tmp/arch.log
+
+      - name: 部署清单校验 verify.sh (篡改应被检出)
+        run: |
+          set -e
+          rm -rf /tmp/z && mkdir -p /tmp/z && cd /tmp/z
+          tar xzf "$GITHUB_WORKSPACE"/dist/crt-bundle-*.tar.gz
+          cd crt-bundle-*
+          # 生成清单并确认初始校验通过
+          bash verify.sh --write
+          bash verify.sh
+          # 篡改一个脚本后必须被检出 (非 0 退出 + 指明文件)
+          printf '# modified\n' >> install.sh
+          if bash verify.sh >/tmp/v.log 2>&1; then
+            echo "❌ 篡改后 verify.sh 未检出"
+            cat /tmp/v.log
+            exit 1
+          fi
+          cat /tmp/v.log
+          grep -q '被修改' /tmp/v.log
+          echo "✅ verify.sh 篡改检出正常"

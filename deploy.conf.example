@@ -1,0 +1,39 @@
+# ============================================================
+# Cloud Remote Tunnel — 服务端部署配置模板
+# ============================================================
+# 复制本文件为 deploy.conf 后按需修改 (deploy.conf 已被 .gitignore 忽略)。
+# 环境变量优先级高于本文件, 适合 CI / AI 自动化注入。
+#
+# 部署: 把本目录上传到云容器, 执行: bash server-start-robust.sh
+# ============================================================
+
+# ---- 终端访问凭据 (TTYD) ----
+# 留空自动生成随机强密码; 也可改成自己的强密码
+TTYD_USER="openclaw"
+TTYD_PASS=""
+TTYD_PORT="7681"
+
+# ---- 隧道模式: auto | config | token | quick ----
+# auto  : 按可用性自动选择 (有 token 用 token; 有凭证文件+域名用 config; 否则 quick)
+# config: 使用 tunnel-credentials.json + cloudflared-config.yml (由 setup-tunnel.sh 生成; 推荐)
+# token : 使用 Cloudflare 控制台创建的隧道 Token (路由规则在控制台配置)
+# quick : 临时隧道 trycloudflare.com, 无需账号 (地址会变化, 仅供测试)
+TUNNEL_MODE="auto"
+
+# 你的专属域名 (config 模式必填; 例如 tunnel.example.com)
+TUNNEL_DOMAIN=""
+
+# 隧道 Token (token 模式使用; config 模式留空)
+TUNNEL_TOKEN=""
+
+# ---- 版本与下载源 ----
+# 二进制下载镜像 (留空则 GitHub 直连)
+GH_MIRROR="https://gh-proxy.com"
+# 如需锁定版本可取消注释:
+# TTYD_VERSION="1.7.7"
+# CF_VERSION="2026.10.1"
+
+# ---- 自启动 (容器重启后自动恢复隧道) ----
+# yes: 复制脚本到 ~/.cloud-remote-tunnel/app + 配置 crontab @reboot / 登录钩子
+# no : 不配置, 容器重启后需手动重跑本脚本或 bash autostart.sh enable
+AUTOSTART="yes"

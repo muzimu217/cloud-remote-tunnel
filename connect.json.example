@@ -1,12 +1,13 @@
 {
-  "_说明": "复制本文件为 connect.json 并填入你自己的信息。proxy 留空表示直连(失败自动尝试本机 7897 端口兜底)。",
+  "_说明": "复制本文件为 connect.json 并填入你自己的信息 (connect.json 已被 .gitignore 忽略)。也可完全跳过本文件, 改用环境变量免密模式: TUNNEL_URL / TUNNEL_USER / TUNNEL_PASSWORD。",
   "default": "myserver",
   "proxy": "",
+  "proxy_fallback": "http://127.0.0.1:7897",
   "servers": {
     "myserver": {
       "url": "https://你的域名.example.com",
       "user": "openclaw",
-      "password": "改成你自己的强密码"
+      "password": "改成你自己的强密码(或部署卡片里自动生成的密码)"
     }
   }
 }
