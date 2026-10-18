@@ -57,6 +57,9 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 CTRL_CLOSE = 0x1D  # Ctrl-]
 DEFAULT_FALLBACK_PROXY = "http://127.0.0.1:7897"
+# 连接阶段(取 token + 建 WebSocket 会话)的默认总预算秒数, 可用
+# CRT_CONNECT_TIMEOUT 覆盖; 实际取值还会被 --timeout 收紧。
+CONNECT_BUDGET_DEFAULT = 12
 
 USAGE = """\
 Cloud Remote Tunnel 连接器
@@ -78,6 +81,11 @@ Cloud Remote Tunnel 连接器
 
 环境变量免密模式 (AI / 脚本):
   TUNNEL_URL=... TUNNEL_USER=... TUNNEL_PASSWORD=... connect.sh "命令"
+
+超时约定 (对 AI / CI 调用很重要):
+  连接阶段(取 token + 建会话)默认最多 12 秒, 且不超过 --timeout;
+  域名解析失败立即报错不再重试。因此不可达时是秒级失败 + 非 0 退出码,
+  不会长时间挂着不动。需要放宽时设 CRT_CONNECT_TIMEOUT=秒数。
 
 常用选项:
   --proxy URL / --no-proxy / --timeout N / --json / --config PATH / --server NAME
@@ -278,37 +286,106 @@ def build_profile(opts, rest):
     sys.exit(2)
 
 
+def connect_budget(opts):
+    """连接阶段(取 token + 建 WebSocket 会话)的总预算秒数。
+
+    默认 12 秒, 且不超过 --timeout。可用 CRT_CONNECT_TIMEOUT 覆盖。
+    为什么必须限时: 代理/网关"接受连接但不回包"时, 原先按次数重试
+    (取 token 10 轮 + 建会话 8 轮, 各带 sleep) 会挂到 100 秒以上且
+    全程无输出 —— 对 AI/CI 调用来说, 挂死比报错难处理得多。
+    """
+    budget = CONNECT_BUDGET_DEFAULT
+    raw = os.environ.get("CRT_CONNECT_TIMEOUT")
+    if raw:
+        try:
+            v = float(raw)
+            if v > 0:
+                budget = v
+        except ValueError:
+            pass
+    try:
+        t = float(opts.get("timeout") or 0)
+    except (TypeError, ValueError):
+        t = 0
+    if t > 0:
+        budget = min(budget, t)
+    return int(budget) if budget == int(budget) else budget
+
+
+def connect_deadline(opts):
+    """连接阶段的共享截止时间(monotonic 秒)。
+
+    同一次调用的"取 token"与"建会话"共用同一个截止时间, 否则两个阶段
+    各自重试会把总耗时翻倍。
+    """
+    d = opts.get("_connect_deadline")
+    if d is None:
+        d = time.monotonic() + connect_budget(opts)
+        opts["_connect_deadline"] = d
+    return d
+
+
+def remaining_budget(opts):
+    """连接阶段剩余秒数; <=0 表示预算已耗尽"""
+    return connect_deadline(opts) - time.monotonic()
+
+
 def curl_token(prof, opts):
-    """取 ttyd CSRF token; 按代理顺序重试 (直连失败自动回退兜底代理)"""
+    """取 ttyd CSRF token; 按代理顺序重试 (直连失败自动回退兜底代理)
+
+    在 connect_budget() 预算内重试, 每次 curl 的 --max-time 也按剩余预算收紧,
+    预算耗尽立即报错, 不再继续等待。
+    """
     port = f":{prof['port']}" if prof["port"] not in (80, 443) else ""
     url = f"{prof.get('scheme', 'https')}://{prof['host']}{port}{prof['base']}/token"
     order = proxy_order(prof, opts)
     last = None
-    for rnd in range(10):
+    rnd = 0
+    dns_failed = False
+    while True:
+        remaining = remaining_budget(opts)
+        if remaining <= 1.0:
+            break
         px = order[0] if rnd < 5 else order[min(1, len(order) - 1)]
-        cmd = ["curl", "-s", "--max-time", "8", "-H", f"Authorization: Basic {prof['auth']}"]
+        cap = max(1, min(8, int(remaining)))
+        cmd = ["curl", "-s", "--max-time", str(cap), "-H", f"Authorization: Basic {prof['auth']}"]
         if px:
             cmd += ["-x", px]
         cmd.append(url)
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=cap + 2)
             if r.stdout.strip().startswith("{"):
                 prof["_proxy_used"] = px
                 return json.loads(r.stdout)["token"]
+            # curl 退出码 6 = 域名无法解析。同一进程内重试同一个域名不会变好,
+            # 立即失败比把预算耗光更快给出可操作的错误。
+            if r.returncode == 6:
+                last = f"域名无法解析: {prof['host']}"
+                dns_failed = True
+                break
             last = r.stdout.strip()[:60] or "超时"
         except Exception as e:
             last = str(e)
-        time.sleep(2)
-    raise SystemExit(f"取 token 失败(线路不通?): {last}")
+        rnd += 1
+        # 只剩很少预算时不再退避, 立即进入下一轮/报错
+        if remaining_budget(opts) > 3.0:
+            time.sleep(2)
+    if dns_failed:
+        raise SystemExit(f"取 token 失败: {last} (检查域名拼写 / DNS / hosts)")
+    hint = "；试加 --no-proxy 排除代理因素" if [p for p in order if p] else ""
+    raise SystemExit(
+        f"取 token 失败(线路不通?): {last} — 连接阶段 {connect_budget(opts):.0f}s 预算已用尽{hint}"
+    )
 
 
-def tls_connect(prof, proxy):
+def tls_connect(prof, proxy, timeout=10):
     host, port = prof["host"], prof["port"]
     if prof.get("scheme") == "http":  # 本地/局域网明文, 不走代理
-        return socket.create_connection((host, port), timeout=10)
+        return socket.create_connection((host, port), timeout=timeout)
     if proxy:
         ppx = proxy.replace("http://", "").split(":")
-        raw = socket.create_connection((ppx[0], int(ppx[1])), timeout=10)
+        raw = socket.create_connection((ppx[0], int(ppx[1])), timeout=timeout)
+        raw.settimeout(timeout)
         raw.sendall(f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n".encode())
         buf = b""
         while b"\r\n\r\n" not in buf:
@@ -319,7 +396,7 @@ def tls_connect(prof, proxy):
         if b" 200" not in buf.split(b"\r\n", 1)[0]:
             raise ConnectionError("代理 CONNECT 被拒")
     else:
-        raw = socket.create_connection((host, port), timeout=10)
+        raw = socket.create_connection((host, port), timeout=timeout)
     return ssl.create_default_context().wrap_socket(raw, server_hostname=host)
 
 
@@ -337,16 +414,24 @@ def send_ws(s, op, payload):
 
 
 def ws_session(prof, token, size, opts):
-    """建立 ttyd WebSocket 会话(tty 子协议 + AuthToken 首帧), 带代理顺序重试"""
+    """建立 ttyd WebSocket 会话(tty 子协议 + AuthToken 首帧), 带代理顺序重试
+
+    与 curl_token 共用同一个连接预算: 预算内重试, 耗尽立即报错。
+    """
     if debug_enabled():
         with open("/tmp/crt_trace.log", "a") as f:
             f.write("ws_session begin\n")
     order = proxy_order(prof, opts)
     last = None
-    for rnd in range(8):
+    rnd = 0
+    while True:
+        remaining = remaining_budget(opts)
+        if remaining <= 1.0:
+            break
         px = order[0] if rnd < 4 else order[min(1, len(order) - 1)]
         try:
-            s = tls_connect(prof, px)
+            per_try = min(10, max(1, remaining))
+            s = tls_connect(prof, px, timeout=per_try)
             key = base64.b64encode(os.urandom(16)).decode()
             req = (f"GET {prof['base']}/ws HTTP/1.1\r\nHost: {prof['host']}\r\n"
                    "Upgrade: websocket\r\nConnection: Upgrade\r\n"
@@ -356,7 +441,7 @@ def ws_session(prof, token, size, opts):
                    f"Origin: https://{prof['host']}\r\nUser-Agent: crt-connect\r\n\r\n")
             s.sendall(req.encode())
             resp = b""
-            s.settimeout(10)
+            s.settimeout(per_try)
             while b"\r\n\r\n" not in resp:
                 c = s.recv(4096)
                 if not c:
@@ -373,9 +458,11 @@ def ws_session(prof, token, size, opts):
             return s
         except Exception as e:
             last = e
-            eprint(f"  连接重试 {rnd + 1}/8: {e}")
-            time.sleep(2)
-    raise SystemExit(f"无法建立会话: {last}")
+            eprint(f"  连接重试: {e}")
+            if remaining_budget(opts) > 3.0:
+                time.sleep(2)
+        rnd += 1
+    raise SystemExit(f"无法建立会话: {last} — 连接阶段 {connect_budget(opts):.0f}s 预算已用尽")
 
 
 def ws_send_input(s, data: bytes):

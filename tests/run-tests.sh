@@ -319,6 +319,96 @@ print(connect._extract_b64(raw, b'CRT_DL_END_0'))
         cnt="$(grep -c "^def $fn" "$ROOT/connect.py")"
         if [ "$cnt" = "1" ]; then ok "函数定义唯一 $fn"; else bad "函数定义唯一 $fn" "定义了 $cnt 次"; fi
     done
+
+    # ---- 连接阶段限时 (AI/CI 调用不能挂死) ----
+    # 背景: 代理"接受连接但不回包"时, 旧的按次数重试(取 token 10 轮 + 建会话 8 轮,
+    # 各带 sleep) 会挂到 100 秒以上且全程无输出 —— 对自动化调用是最差失败模式。
+    BUDGET="$(cd "$ROOT" && python3 -c "
+import sys
+sys.argv = ['connect.py']
+import connect
+print(connect.CONNECT_BUDGET_DEFAULT)
+print(connect.connect_budget({'timeout': '5'}))
+print(connect.connect_budget({'timeout': '60'}))
+print(connect.connect_budget({'timeout': '1'}))
+o = {}
+d1 = connect.connect_deadline(o); d2 = connect.connect_deadline(o)
+print('shared' if d1 == d2 else 'differs')
+print(int(connect.remaining_budget(o) > 0))
+" 2>/dev/null | tr '\n' ' ')"
+    assert_eq "连接预算: 默认/被timeout收紧/不放大" "12 5 12 1 shared 1 " "$BUDGET"
+
+    # 重试循环不得再用固定次数 (range(N) 会无视剩余预算)
+    for fn in curl_token ws_session; do
+        if python3 - "$ROOT/connect.py" "$fn" <<'PY' 2>/dev/null
+import ast, sys
+src = open(sys.argv[1]).read()
+tree = ast.parse(src)
+fn = next(n for n in ast.walk(tree)
+          if isinstance(n, ast.FunctionDef) and n.name == sys.argv[2])
+has_fixed_range = any(
+    isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    and node.func.id == 'range'
+    for node in ast.walk(fn))
+sys.exit(1 if has_fixed_range else 0)
+PY
+        then ok "限时重试 $fn (无固定轮数)"
+        else bad "限时重试 $fn (无固定轮数)" "仍在用 range(N) 固定次数重试"
+        fi
+    done
+
+    # 两个阶段必须共用同一个截止时间, 否则总耗时翻倍
+    if grep -q 'def connect_deadline' "$ROOT/connect.py" && \
+       [ "$(grep -c 'remaining_budget(opts)' "$ROOT/connect.py")" -ge 2 ]; then
+        ok "取token与建会话共用预算"
+    else
+        bad "取token与建会话共用预算" "未共用截止时间"
+    fi
+
+    # 域名解析失败必须立即放弃重试 (curl 退出码 6)
+    if grep -q 'r.returncode == 6' "$ROOT/connect.py"; then
+        ok "DNS 失败不重试"
+    else
+        bad "DNS 失败不重试" "未识别 curl 退出码 6"
+    fi
+
+    # 失败时必须给出可操作提示, 且 JSON 模式要有结构化输出
+    if grep -q '试加 --no-proxy' "$ROOT/connect.py"; then
+        ok "失败提示含 --no-proxy 建议"
+    else
+        bad "失败提示含 --no-proxy 建议" "未找到"
+    fi
+    if grep -q '"ok": False' "$ROOT/connect.py"; then
+        ok "JSON 模式失败输出结构化错误"
+    else
+        bad "JSON 模式失败输出结构化错误" "未找到"
+    fi
+
+    # 真实不可达域名: 必须在数秒内失败并带非 0 退出码 (DNS 失败不重试)
+    # 依赖: curl 可用 + RFC2606 保留域 .invalid 必然解析失败
+    if command -v curl >/dev/null 2>&1; then
+        FAKE_START="$(date +%s)"
+        FAKE_OUT="$(cd "$ROOT" && TUNNEL_URL="https://nonexistent.invalid" TUNNEL_USER=u \
+                    TUNNEL_PASSWORD=p timeout 40 ./connect.sh --no-proxy --json "echo hi" 2>&1)"
+        FAKE_RC=$?
+        FAKE_ELAPSED=$(( $(date +%s) - FAKE_START ))
+        if [ "$FAKE_RC" -ne 0 ] && [ "$FAKE_RC" -ne 124 ]; then
+            ok "不可达域名: 非0退出码 ($FAKE_RC)"
+        else
+            bad "不可达域名: 非0退出码 ($FAKE_RC)" "退出码不该是 0 或 124(超时被杀)"
+        fi
+        if [ "$FAKE_ELAPSED" -le 10 ]; then
+            ok "不可达域名: 快速失败 (${FAKE_ELAPSED}s)"
+        else
+            bad "不可达域名: 快速失败 (${FAKE_ELAPSED}s)" "超过 10 秒, 自动化调用会等待过久"
+        fi
+        case "$FAKE_OUT" in
+            *'"ok": false'*) ok "不可达域名: JSON 结构化报错" ;;
+            *) bad "不可达域名: JSON 结构化报错" "输出: $(printf '%s' "$FAKE_OUT" | head -2)" ;;
+        esac
+    else
+        bad "不可达域名快速失败" "缺少 curl, 无法验证"
+    fi
 fi
 
 # ---------------------------------------------------------------
