@@ -4,7 +4,7 @@
 
 把隔离的云端环境通过 **Cloudflare Tunnel** 挂到你自己的域名上；本地 `./connect.sh` 一条命令直连远程终端——像 SSH 一样，给云端跑的 AI agent / coding 工具留一个摸得着的口子。
 
-**v3.1 新特性**：架构自适应 (amd64/arm64/armv7/386) · 零硬编码凭证（自动生成随机密码）· 三种隧道模式自动选择 · 一键部署输出"连接卡片" · 环境变量免密模式（AI / CI 友好）· `setup-tunnel.sh` 域名接入自动化 · **文件上传/下载** · **71 项自动化测试 + CI**。
+**v3.1 新特性**：架构自适应 (amd64/arm64/armv7/386) · 零硬编码凭证（自动生成随机密码）· 三种隧道模式自动选择 · 一键部署输出"连接卡片" · 环境变量免密模式（AI / CI 友好）· `setup-tunnel.sh` 域名接入自动化 · **文件上传/下载** · **自启动（容器重启自动恢复）** · **116 项自动化测试 + CI**。
 
 ---
 
@@ -133,14 +133,14 @@ croc 2450-fiesta-video-joshua  # 另一端
 
 ```bash
 ./make-bundle.sh --arch amd64        # 或 --all 同时打 amd64 + arm64
-# 产物: dist/crt-bundle-3.0.0-linux-amd64.tar.gz (+ .sha256 校验文件)
+# 产物: dist/crt-bundle-3.1.0-linux-amd64.tar.gz (+ .sha256 校验文件)
 ```
 
 上传服务器后，一条命令完成部署（校验 → 安装 → 自动启动 → 输出连接卡片）：
 
 ```bash
-tar xzf crt-bundle-3.0.0-linux-amd64.tar.gz
-cd crt-bundle-3.0.0-linux-amd64
+tar xzf crt-bundle-3.1.0-linux-amd64.tar.gz
+cd crt-bundle-3.1.0-linux-amd64
 bash install.sh
 ```
 
